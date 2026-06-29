@@ -1,0 +1,554 @@
+openapi: 3.1.0
+info:
+  title: JisrVOC API
+  version: 1.0.0
+  description: >
+    Backend contract for the Jisr Voice of Customer Intelligence Platform.
+    All endpoints require an authenticated session (Jisr SSO / OIDC) and are
+    subject to RBAC. List endpoints are cursor-paginated. This contract is the
+    shared interface between the React/TypeScript frontend and the FastAPI
+    backend; generate the frontend client from this file.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Overview
+  - name: Feedback
+  - name: Themes
+  - name: Bets
+  - name: Customers
+  - name: Admin
+  - name: Webhooks
+  - name: Ops
+
+paths:
+  /overview/metrics:
+    get:
+      tags: [Overview]
+      summary: Top-line KPIs for the Overview home
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OverviewMetrics" }
+
+  /overview/volume-trend:
+    get:
+      tags: [Overview]
+      summary: Feedback volume over the last N weeks
+      parameters:
+        - { name: weeks, in: query, schema: { type: integer, default: 12 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TrendPoint" }
+
+  /overview/by-source:
+    get:
+      tags: [Overview]
+      summary: Feedback counts grouped by source
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CountBucket" }
+
+  /overview/by-product-area:
+    get:
+      tags: [Overview]
+      summary: Feedback counts grouped by product area
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CountBucket" }
+
+  /overview/top-themes:
+    get:
+      tags: [Overview]
+      summary: Top themes this week with trend signals
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 5 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ThemeSummary" }
+
+  /feedback:
+    get:
+      tags: [Feedback]
+      summary: Filterable, paginated feedback feed (post-decomposition)
+      parameters:
+        - { name: source, in: query, schema: { $ref: "#/components/schemas/SourceType" } }
+        - { name: area, in: query, schema: { $ref: "#/components/schemas/ProductArea" } }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/Category" } }
+        - { name: sentiment, in: query, schema: { $ref: "#/components/schemas/Sentiment" } }
+        - { name: urgency, in: query, schema: { $ref: "#/components/schemas/Urgency" } }
+        - { name: language, in: query, schema: { $ref: "#/components/schemas/Language" } }
+        - { name: segment, in: query, schema: { $ref: "#/components/schemas/Segment" } }
+        - { name: date_from, in: query, schema: { type: string, format: date } }
+        - { name: date_to, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeedbackPage" }
+
+  /feedback/{id}:
+    get:
+      tags: [Feedback]
+      summary: Feedback item detail (raw text + AI tags)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeedbackDetail" }
+        "404": { description: Not found }
+
+  /feedback/{id}/tags:
+    patch:
+      tags: [Feedback]
+      summary: Correct AI-generated tags (PM only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TagCorrection" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeedbackItem" }
+
+  /themes:
+    get:
+      tags: [Themes]
+      summary: All active themes
+      parameters:
+        - { name: trend, in: query, schema: { $ref: "#/components/schemas/Trend" } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ThemeSummary" }
+
+  /themes/{id}:
+    get:
+      tags: [Themes]
+      summary: Theme detail incl. verbatims and linked bet
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThemeDetail" }
+        "404": { description: Not found }
+
+  /bets:
+    get:
+      tags: [Bets]
+      summary: Bets grouped for the lifecycle board
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/BetStatus" } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BetSummary" }
+    post:
+      tags: [Bets]
+      summary: Create a bet (usually promoted from a generated draft)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BetCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BetDetail" }
+
+  /bets/{id}:
+    get:
+      tags: [Bets]
+      summary: Bet detail with evidence list
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BetDetail" }
+    patch:
+      tags: [Bets]
+      summary: Update a bet; a status change triggers HubSpot loop-closure write-back
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BetUpdate" }
+      responses:
+        "200":
+          description: OK; includes write-back result when status changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BetUpdateResult" }
+
+  /customers:
+    get:
+      tags: [Customers]
+      summary: Search companies
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Customer" }
+
+  /customers/{id}/feedback:
+    get:
+      tags: [Customers]
+      summary: All feedback for a company across sources
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/FeedbackItem" }
+
+  /customers/{id}/bets:
+    get:
+      tags: [Customers]
+      summary: Bets linked to a company's feedback
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BetSummary" }
+
+  /connectors:
+    get:
+      tags: [Admin]
+      summary: List source connectors and sync health
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Connector" }
+
+  /pm-routing:
+    get:
+      tags: [Admin]
+      summary: Product-area to PM routing rules
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RoutingRule" }
+
+  /webhooks/{source}:
+    post:
+      tags: [Webhooks]
+      summary: Inbound source webhook (signature-verified) — enqueues ingestion
+      parameters:
+        - { name: source, in: path, required: true, schema: { $ref: "#/components/schemas/SourceType" } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "202": { description: Accepted (enqueued) }
+
+  /healthz:
+    get:
+      tags: [Ops]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200": { description: OK }
+  /readyz:
+    get:
+      tags: [Ops]
+      summary: Readiness probe (checks DB + queue)
+      security: []
+      responses:
+        "200": { description: Ready }
+        "503": { description: Not ready }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SourceType: { type: string, enum: [hubspot, zendesk, canny, jira] }
+    Category:    { type: string, enum: [pain_point, feature_request, bug_report, how_to_question, praise] }
+    ProductArea: { type: string, enum: [core_hr, payroll, jisrpay, onboarding, offboarding, contracts, mobile, integrations, other] }
+    Sentiment:   { type: string, enum: [positive, neutral, negative, mixed] }
+    Urgency:     { type: string, enum: [low, medium, high] }
+    Language:    { type: string, enum: [ar, en, mixed] }
+    Segment:     { type: string, enum: [smb, mid_market, enterprise, government] }
+    Trend:       { type: string, enum: [new, rising, stable, declining] }
+    BetStatus:   { type: string, enum: [draft, in_backlog, in_discovery, in_build, shipped, declined] }
+
+    OverviewMetrics:
+      type: object
+      required: [total_items, active_themes, high_urgency_open, bets_in_flight, urgency_distribution]
+      properties:
+        total_items:       { type: integer }
+        active_themes:     { type: integer }
+        high_urgency_open: { type: integer }
+        bets_in_flight:    { type: integer }
+        urgency_distribution:
+          type: object
+          properties:
+            low: { type: integer }
+            medium: { type: integer }
+            high: { type: integer }
+
+    TrendPoint:
+      type: object
+      properties:
+        week_start: { type: string, format: date }
+        count: { type: integer }
+
+    CountBucket:
+      type: object
+      properties:
+        key: { type: string }
+        count: { type: integer }
+
+    FeedbackItem:
+      type: object
+      required: [id, summary_en, source, language]
+      properties:
+        id: { type: string, format: uuid }
+        summary_en: { type: string }
+        source: { $ref: "#/components/schemas/SourceType" }
+        category: { $ref: "#/components/schemas/Category" }
+        area: { $ref: "#/components/schemas/ProductArea" }
+        sentiment: { $ref: "#/components/schemas/Sentiment" }
+        urgency: { $ref: "#/components/schemas/Urgency" }
+        language: { $ref: "#/components/schemas/Language" }
+        segment: { $ref: "#/components/schemas/Segment" }
+        customer_id: { type: string }
+        customer_name: { type: string }
+        is_split: { type: boolean }
+        parent_ticket_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+
+    FeedbackDetail:
+      allOf:
+        - $ref: "#/components/schemas/FeedbackItem"
+        - type: object
+          properties:
+            raw_text: { type: string, description: "Original source text, preserved verbatim (may be RTL Arabic)" }
+            raw_language: { $ref: "#/components/schemas/Language" }
+            enrichment_model: { type: string }
+            enrichment_confidence: { type: number }
+            pm_corrected: { type: boolean }
+
+    FeedbackPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FeedbackItem" }
+        next_cursor: { type: string, nullable: true }
+        total: { type: integer }
+
+    TagCorrection:
+      type: object
+      properties:
+        category: { $ref: "#/components/schemas/Category" }
+        area: { $ref: "#/components/schemas/ProductArea" }
+        sentiment: { $ref: "#/components/schemas/Sentiment" }
+        urgency: { $ref: "#/components/schemas/Urgency" }
+
+    Verbatim:
+      type: object
+      properties:
+        text: { type: string }
+        language: { $ref: "#/components/schemas/Language" }
+        customer_name: { type: string }
+        source: { $ref: "#/components/schemas/SourceType" }
+
+    ThemeSummary:
+      type: object
+      required: [id, name_en, trend, item_count]
+      properties:
+        id: { type: string, format: uuid }
+        name_en: { type: string }
+        description_en: { type: string }
+        trend: { $ref: "#/components/schemas/Trend" }
+        item_count: { type: integer }
+        customer_count: { type: integer }
+        vote_weight: { type: integer }
+        top_segments:
+          type: array
+          items: { $ref: "#/components/schemas/Segment" }
+
+    ThemeDetail:
+      allOf:
+        - $ref: "#/components/schemas/ThemeSummary"
+        - type: object
+          properties:
+            segment_breakdown:
+              type: array
+              items: { $ref: "#/components/schemas/CountBucket" }
+            verbatims:
+              type: array
+              items: { $ref: "#/components/schemas/Verbatim" }
+            linked_bet: { $ref: "#/components/schemas/BetSummary" }
+
+    BetSummary:
+      type: object
+      required: [id, title, status]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/BetStatus" }
+        problem_snippet: { type: string }
+        affected_segments:
+          type: array
+          items: { $ref: "#/components/schemas/Segment" }
+        est_customer_count: { type: integer }
+        why_now: { type: string }
+        evidence_count: { type: integer }
+        theme_id: { type: string, format: uuid }
+
+    BetDetail:
+      allOf:
+        - $ref: "#/components/schemas/BetSummary"
+        - type: object
+          properties:
+            problem_statement: { type: string }
+            owner_pm: { type: string }
+            declined_reason: { type: string }
+            evidence:
+              type: array
+              items: { $ref: "#/components/schemas/FeedbackItem" }
+
+    BetCreate:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        theme_id: { type: string, format: uuid }
+        problem_statement: { type: string }
+        affected_segments:
+          type: array
+          items: { $ref: "#/components/schemas/Segment" }
+        est_customer_count: { type: integer }
+
+    BetUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        problem_statement: { type: string }
+        status: { $ref: "#/components/schemas/BetStatus" }
+        declined_reason: { type: string }
+
+    BetUpdateResult:
+      allOf:
+        - $ref: "#/components/schemas/BetDetail"
+        - type: object
+          properties:
+            writeback:
+              type: object
+              description: Present when a status change triggered loop-closure
+              properties:
+                tickets_updated: { type: integer }
+                action: { type: string, enum: [note, property_update] }
+                status_value: { $ref: "#/components/schemas/BetStatus" }
+
+    Customer:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        domain: { type: string }
+        segment: { $ref: "#/components/schemas/Segment" }
+        lifecycle_stage: { type: string }
+        industry: { type: string }
+        is_prospect: { type: boolean }
+
+    Connector:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: "#/components/schemas/SourceType" }
+        display_name: { type: string }
+        status: { type: string, enum: [connected, degraded, disconnected] }
+        last_sync_at: { type: string, format: date-time }
+
+    RoutingRule:
+      type: object
+      properties:
+        area: { $ref: "#/components/schemas/ProductArea" }
+        pm_user_id: { type: string }
+        pm_name: { type: string }
