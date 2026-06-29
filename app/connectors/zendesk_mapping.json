@@ -1,0 +1,29 @@
+{
+  "ticket_mapping": {
+    "id": "external_id",
+    "subject": "title",
+    "description": "content",
+    "priority": "priority",
+    "type": "category_hint",
+    "status": "status",
+    "created_at": "created_at",
+    "updated_at": "updated_at",
+    "via.channel": "source_channel",
+    "tags": "tags"
+  },
+  "user_mapping": {
+    "id": "external_id",
+    "email": "email",
+    "name": "name",
+    "organization_id": "company_external_id",
+    "role": "role"
+  },
+  "organization_mapping": {
+    "id": "external_id",
+    "name": "company_name",
+    "domain_names": "domain"
+  },
+  "satisfaction_mapping": {
+    "satisfaction_rating.score": "satisfaction_score"
+  }
+}
