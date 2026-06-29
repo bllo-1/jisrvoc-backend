@@ -192,8 +192,11 @@ class ZendeskConnector:
             "source": "zendesk",
         }
 
-        # Apply field mapping
+        # Apply field mapping (skip 'id' as it's already handled)
         for zd_field, jisr_field in mapping.items():
+            if zd_field == "id":  # Already converted to string above
+                continue
+
             # Handle nested fields (e.g., "via.channel")
             if "." in zd_field:
                 parts = zd_field.split(".")
@@ -283,6 +286,8 @@ class ZendeskConnector:
         }
 
         for zd_field, jisr_field in mapping.items():
+            if zd_field == "id":  # Already converted to string above
+                continue
             value = user.get(zd_field)
             if value is not None:
                 transformed[jisr_field] = value
@@ -349,11 +354,16 @@ class ZendeskConnector:
         }
 
         for zd_field, jisr_field in mapping.items():
+            if zd_field == "id":  # Already converted to string above
+                continue
+
             value = org.get(zd_field)
 
             # Special handling for domain_names array
-            if zd_field == "domain_names" and isinstance(value, list) and len(value) > 0:
-                transformed[jisr_field] = value[0]  # Take first domain
+            if zd_field == "domain_names":
+                if isinstance(value, list) and len(value) > 0:
+                    transformed[jisr_field] = value[0]  # Take first domain
+                # Skip empty arrays - don't add to transformed
             elif value is not None:
                 transformed[jisr_field] = value
 
