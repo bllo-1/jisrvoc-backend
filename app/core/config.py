@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     gcp_project_id: str = ""
     gcp_region: str = "me-central1"  # Dammam, Saudi Arabia
 
+    # Connectors (Phase 1)
+    hubspot_api_key: str = ""
+    zendesk_email: str = ""
+    zendesk_api_token: str = ""
+    zendesk_subdomain: str = ""
+
     # Observability
     sentry_dsn: str = ""
     log_level: str = "INFO"
