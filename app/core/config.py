@@ -25,7 +25,13 @@ class Settings(BaseSettings):
     oidc_jwks_url: str = ""
 
     # AI/ML
-    embedding_dim: int = 1024
+    llm_provider: str = "openai"  # openai or vertex_ai
+    openai_api_key: str = ""
+    embedding_dim: int = 1536  # OpenAI text-embedding-3-small
+
+    # Vertex AI (Phase 4)
+    gcp_project_id: str = ""
+    gcp_region: str = "me-central1"  # Dammam, Saudi Arabia
 
     # Observability
     sentry_dsn: str = ""
