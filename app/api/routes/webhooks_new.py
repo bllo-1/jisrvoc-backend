@@ -8,16 +8,22 @@ In production:
 3. Worker processes payload: normalize, dedupe, persist to DB
 4. Return 200 immediately to acknowledge receipt
 """
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any
 import logging
+
+from app.db.session import get_db
+from app.connectors.hubspot import HubSpotConnector
+from app.repositories.feedback import FeedbackRepository
+from app.services.identity_resolution import IdentityResolutionService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.post("/hubspot")
-async def hubspot_webhook(request: Request):
+async def hubspot_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """
     @endpoint POST /api/public/webhooks/hubspot
     Receives ticket updates from HubSpot.
@@ -38,19 +44,56 @@ async def hubspot_webhook(request: Request):
     """
     try:
         payload: Dict[str, Any] = await request.json()
+        object_id = payload.get("objectId")
 
-        # In production:
-        # 1. Verify HMAC signature from X-HubSpot-Signature header
-        # 2. Validate payload structure
-        # 3. Enqueue to background job (Celery/BullMQ)
-        # 4. Worker will: fetch full ticket data, normalize, dedupe, persist
+        if not object_id:
+            logger.warning("HubSpot webhook received without objectId")
+            return {"status": "rejected", "reason": "Missing objectId"}
 
-        logger.info(f"HubSpot webhook received: {payload.get('objectId')}")
+        # TODO: In production - verify HMAC signature from X-HubSpot-Signature header
+        # signature = request.headers.get("X-HubSpot-Signature")
+        # verify_hubspot_signature(payload, signature)
 
-        return {"status": "accepted", "source": "HubSpot"}
+        logger.info(f"HubSpot webhook received for ticket {object_id}")
 
+        # Initialize HubSpot connector and fetch the full ticket
+        hubspot = HubSpotConnector(session=db)
+
+        # Fetch the specific ticket from HubSpot API
+        import httpx
+        headers = {
+            "Authorization": f"Bearer {hubspot.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{hubspot.base_url}/crm/v3/objects/tickets/{object_id}",
+                headers=headers,
+                params={
+                    "properties": "subject,content,hs_ticket_id,hs_ticket_category,hs_ticket_priority,hs_pipeline_stage,createdate,hs_lastmodifieddate,source_type"
+                },
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            ticket = response.json()
+
+        # Sync the ticket to feedback (with identity resolution)
+        feedback = await hubspot.sync_ticket_to_feedback(ticket)
+
+        logger.info(f"HubSpot webhook processed: created/updated feedback {feedback.id}")
+
+        return {
+            "status": "accepted",
+            "source": "hubspot",
+            "feedback_id": feedback.id
+        }
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Failed to fetch HubSpot ticket: {e}")
+        raise HTTPException(status_code=502, detail="Failed to fetch ticket from HubSpot")
     except Exception as e:
-        logger.error(f"HubSpot webhook processing failed: {e}")
+        logger.error(f"HubSpot webhook processing failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Webhook processing failed")
 
 
@@ -175,4 +218,123 @@ async def jira_webhook(request: Request):
 
     except Exception as e:
         logger.error(f"Jira webhook processing failed: {e}")
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
+
+
+@router.post("/{source}")
+async def generic_webhook(
+    source: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    @endpoint POST /api/public/webhooks/{source}
+    Generic webhook endpoint for real-time feedback ingestion from any source.
+
+    This endpoint accepts feedback data directly (not wrapped in source-specific format).
+    Useful for:
+    - Custom integrations
+    - Testing
+    - Sources without dedicated webhooks (Zendesk, Canny, Jira)
+
+    Expected payload:
+    {
+        "external_id": "ticket-123",
+        "title": "Cannot process payroll",
+        "content": "Detailed description...",
+        "customer_email": "john@company.com",
+        "customer_name": "John Doe",
+        "source_channel": "email",
+        "priority": "high",
+        "status": "open",
+        "metadata": {
+            "custom_field": "value"
+        }
+    }
+    """
+    try:
+        payload: Dict[str, Any] = await request.json()
+
+        # Validate source
+        valid_sources = ["hubspot", "zendesk", "canny", "jira", "email", "chat", "api"]
+        if source.lower() not in valid_sources:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid source '{source}'. Valid sources: {', '.join(valid_sources)}"
+            )
+
+        # Extract required fields
+        external_id = payload.get("external_id")
+        title = payload.get("title")
+        content = payload.get("content")
+
+        if not title or not content:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing required fields: title and content are required"
+            )
+
+        # Extract optional customer info for identity resolution
+        customer_email = payload.get("customer_email")
+        customer_name = payload.get("customer_name")
+
+        logger.info(f"Generic webhook received from {source}: {external_id or 'no ID'}")
+
+        # Initialize repositories and services
+        feedback_repo = FeedbackRepository(db)
+        identity_service = IdentityResolutionService(db)
+
+        # Check if feedback already exists (if external_id provided)
+        if external_id:
+            existing = await feedback_repo.get_by_source_and_external_id(
+                source=source.lower(),
+                external_id=external_id,
+            )
+            if existing:
+                logger.info(f"Feedback already exists: {existing.id}, skipping")
+                return {
+                    "status": "duplicate",
+                    "source": source.lower(),
+                    "feedback_id": existing.id
+                }
+
+        # Create feedback
+        feedback = await feedback_repo.create(
+            source=source.lower(),
+            external_id=external_id,
+            source_channel=payload.get("source_channel", "api"),
+            title=title,
+            content=content,
+            customer_email=customer_email,
+            priority=payload.get("priority"),
+            status=payload.get("status", "open"),
+            metadata=payload.get("metadata", {}),
+        )
+
+        await feedback_repo.commit()
+        logger.info(f"Created feedback {feedback.id} from {source} webhook")
+
+        # Resolve customer identity if email provided
+        if customer_email:
+            logger.info(f"Resolving identity for feedback {feedback.id}")
+            customer = await identity_service.resolve_feedback_identity(
+                feedback=feedback,
+                email=customer_email,
+                name=customer_name,
+            )
+            if customer:
+                logger.info(f"Linked feedback {feedback.id} to customer {customer.id}")
+
+        return {
+            "status": "accepted",
+            "source": source.lower(),
+            "feedback_id": feedback.id,
+            "customer_linked": customer_email is not None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"{source} webhook processing failed: {e}", exc_info=True)
+        await db.rollback()
         raise HTTPException(status_code=500, detail="Webhook processing failed")

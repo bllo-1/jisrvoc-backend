@@ -4,6 +4,7 @@ pydantic==2.*
 pydantic-settings==2.*
 sqlalchemy==2.*
 asyncpg==0.30.*
+psycopg2-binary==2.9.*  # For Alembic migrations (sync)
 alembic==1.14.*
 redis==5.*
 httpx==0.27.*
@@ -12,7 +13,12 @@ python-jose[cryptography]==3.*
 sentry-sdk[fastapi]==2.*
 # AI / pipeline (used in Phase 1/2 workers)
 pgvector==0.3.*
-# celery==5.*            # enable when wiring async workers
+celery==5.*
+hdbscan==0.8.*
+scikit-learn==1.5.*
+numpy==1.26.*
+slack-sdk==3.*
+python-dateutil==2.*  # For date parsing
 openai==1.54.3
 hubspot-api-client==12.0.0
 
@@ -20,3 +26,5 @@ hubspot-api-client==12.0.0
 pytest==8.*
 pytest-asyncio==0.24.*
 pytest-mock==3.*
+aiosqlite==0.22.*  # For async SQLite testing
+greenlet==3.*  # For async SQLAlchemy testing

@@ -29,6 +29,39 @@ services:
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_started }
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Celery worker for all background tasks (Phases 2-5)
+  celery-worker:
+    build: .
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=4 --queues=writeback,notifications,chargebee_enrichment,clustering,alerts
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://jisrvoc:jisrvoc@db:5432/jisrvoc
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    restart: unless-stopped
+
+  # Celery beat scheduler for periodic tasks
+  celery-beat:
+    build: .
+    command: celery -A app.core.celery_app beat --loglevel=info
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://jisrvoc:jisrvoc@db:5432/jisrvoc
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    restart: unless-stopped
 
 volumes:
   pgdata:

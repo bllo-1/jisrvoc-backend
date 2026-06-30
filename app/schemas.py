@@ -163,6 +163,13 @@ class BetUpdate(BaseModel):
     declined_reason: str | None = None
 
 
+class BetStatusUpdate(BaseModel):
+    """Schema for updating bet status with write-back to HubSpot."""
+    new_status: BetStatus
+    notes: str | None = None
+    performed_by: str | None = None  # PM email, typically from auth context
+
+
 class Writeback(BaseModel):
     tickets_updated: int
     action: str

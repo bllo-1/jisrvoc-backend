@@ -2,8 +2,9 @@
 Bets API endpoints - product bets, evidence, status changes, writeback.
 Matches frontend contract from jisrvoc-frontend/src/lib/api/bets.ts
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from typing import List
+from sqlalchemy.ext.asyncio import AsyncSession
 from ...schemas_new import (
     ProductBet,
     FeedbackItem,
@@ -12,6 +13,11 @@ from ...schemas_new import (
     BetStatusChangeResponse,
 )
 from ... import mock_data
+from ...db.session import get_db
+from ...repositories.bet import BetRepository
+from ...repositories.writeback_log import WritebackLogRepository
+from ...workers.writeback_worker import writeback_to_hubspot
+from ...models.bet import BetStatus
 
 router = APIRouter()
 
@@ -83,38 +89,122 @@ async def get_writeback_log(bet_id: str):
 
 
 @router.patch("/{bet_id}/status", response_model=BetStatusChangeResponse)
-async def change_status(bet_id: str, request: BetStatusChangeRequest):
+async def change_status(
+    bet_id: str,
+    request: BetStatusChangeRequest,
+    db: AsyncSession = Depends(get_db),
+):
     """
     @endpoint PATCH /api/v1/bets/:id/status
     Changes bet status and triggers writeback to source tickets.
 
-    In production, this would:
+    Phase 4 Implementation:
     1. Update bet status in database
     2. Find all feedback items linked to this bet's theme
-    3. Trigger async writeback jobs to HubSpot/Zendesk/Canny/Jira
+    3. Trigger async writeback jobs to HubSpot via Celery
     4. Create WritebackEntry records for each ticket
     5. Return summary of writeback results
     """
-    bet = next((b for b in mock_data.BETS if b.id == bet_id), None)
+    # Try to get bet from database first
+    bet_repo = BetRepository(db)
+    try:
+        # Convert string ID to UUID if needed
+        import uuid as uuid_module
+        if not bet_id.count('-') == 4:  # Not a UUID format (e.g., "b1")
+            # Fall back to mock data for non-UUID IDs
+            bet = None
+        else:
+            bet = await bet_repo.get_by_id(bet_id)
+    except (ValueError, TypeError):
+        bet = None
+
+    # If not in database, check mock data
     if not bet:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail=f"Bet {bet_id} not found")
+        mock_bet = next((b for b in mock_data.BETS if b.id == bet_id), None)
+        if not mock_bet:
+            raise HTTPException(status_code=404, detail=f"Bet {bet_id} not found")
 
-    # Find all feedback items linked to this bet's theme
-    theme_feedback = []
-    if bet.theme_id:
-        theme_feedback = mock_data.get_feedback_for_theme(bet.theme_id)
+        # For mock data, simulate the status update without database persistence
+        # Return success response with mock writeback
+        return BetStatusChangeResponse(
+            bet_id=bet_id,
+            new_status=request.status,
+            writebacks_triggered=0,  # No actual tickets to update for mock data
+            writebacks_succeeded=0,
+            writebacks_failed=0,
+        )
 
-    # In production, this would trigger async writeback jobs
-    # For mock, we simulate success/failure
-    triggered_count = len(theme_feedback)
-    failed_count = 1 if triggered_count > 5 else 0  # Simulate occasional failure
-    succeeded_count = triggered_count - failed_count
+    # Map string status from request to BetStatus enum (from models)
+    # schemas_new.BetStatus has values like "Draft", "Shipped"
+    # models.bet.BetStatus has values like "draft", "shipped"
+    status_mapping = {
+        "Draft": "draft",
+        "In Backlog": "in_backlog",
+        "In Discovery": "in_discovery",
+        "In Build": "in_build",
+        "Shipped": "shipped",
+        "Declined": "declined",
+    }
 
+    try:
+        db_status_value = status_mapping.get(request.status)
+        if not db_status_value:
+            raise ValueError(f"Unknown status: {request.status}")
+        bet_status = BetStatus(db_status_value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {request.status}")
+
+    # Update bet status in database
+    await bet_repo.update_status(
+        bet_id=bet_id,
+        status=bet_status,
+        owner_pm=bet.owner_pm,
+        declined_reason=request.declined_reason if bet_status == BetStatus.DECLINED else None,
+    )
+    await bet_repo.commit()
+
+    # Get HubSpot ticket IDs from evidence
+    # TODO: Extract actual HubSpot ticket IDs from bet.evidence
+    # For now, use mock data to simulate ticket extraction
+    mock_bet = next((b for b in mock_data.BETS if b.id == bet_id), None)
+    ticket_ids = []  # In production: extract from evidence where source="hubspot"
+
+    # If mock bet has theme, get feedback count for simulation
+    triggered_count = 0
+    if mock_bet and mock_bet.theme_id:
+        theme_feedback = mock_data.get_feedback_for_theme(mock_bet.theme_id)
+        triggered_count = len(theme_feedback)
+
+    # Create initial writeback_log entries (will be updated by worker)
+    log_repo = WritebackLogRepository(db)
+    if ticket_ids:
+        for ticket_id in ticket_ids:
+            await log_repo.create_log_entry(
+                bet_id=bet_id,
+                hubspot_ticket_id=ticket_id,
+                action="property_update",
+                status_value=bet_status,
+                pm_id=bet.owner_pm or "system",
+                result="pending",
+            )
+        await log_repo.commit()
+
+    # Enqueue Celery task for async HubSpot write-back (fire-and-forget)
+    if ticket_ids:
+        writeback_to_hubspot.delay(
+            bet_id=str(bet.id),
+            ticket_ids=ticket_ids,
+            status=bet_status.value,
+            resolution_notes=request.declined_reason,
+            pm_id=bet.owner_pm,
+        )
+
+    # Return response with writeback summary
+    # Note: succeeded/failed counts will be 0 initially since writeback is async
     return BetStatusChangeResponse(
         bet_id=bet_id,
         new_status=request.status,
-        writebacks_triggered=triggered_count,
-        writebacks_succeeded=succeeded_count,
-        writebacks_failed=failed_count,
+        writebacks_triggered=len(ticket_ids),
+        writebacks_succeeded=0,  # Async - will be updated in writeback_log
+        writebacks_failed=0,     # Check writeback_log for actual results
     )

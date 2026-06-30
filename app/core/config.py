@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     zendesk_api_token: str = ""
     zendesk_subdomain: str = ""
 
+    # Chargebee (Phase 5 - Customer Enrichment)
+    chargebee_api_key: str = ""
+    chargebee_site: str = "jisr"  # Chargebee site name (e.g., jisr.chargebee.com)
+
+    # Slack (Phase 2 - Alerts)
+    slack_bot_token: str = ""
+    slack_channel_urgent: str = ""  # Channel for urgent alerts
+
     # Observability
     sentry_dsn: str = ""
     log_level: str = "INFO"

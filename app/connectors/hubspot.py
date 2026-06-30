@@ -1,329 +1,302 @@
-"""HubSpot connector for syncing tickets, contacts, and companies."""
+"""HubSpot connector for syncing support tickets as feedback."""
 
-import json
-import asyncio
-from pathlib import Path
-from typing import Any
+import logging
+from typing import Optional, List
 from datetime import datetime
 
-from hubspot import HubSpot
-from hubspot.crm.tickets import ApiException as TicketsException
-from hubspot.crm.contacts import ApiException as ContactsException
-from hubspot.crm.companies import ApiException as CompaniesException
+import httpx
 
 from app.core.config import settings
+from app.repositories.feedback import FeedbackRepository
+from app.models.feedback import Feedback
+from app.services.identity_resolution import IdentityResolutionService
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
-class HubSpotRateLimiter:
-    """Token bucket rate limiter for HubSpot API (10 req/sec)."""
-
-    def __init__(self, rate: int = 10, per_seconds: int = 1):
-        """
-        Initialize rate limiter.
-
-        Args:
-            rate: Number of requests allowed
-            per_seconds: Time period in seconds
-        """
-        self.rate = rate
-        self.per_seconds = per_seconds
-        self.allowance = rate
-        self.last_check = datetime.now()
-        self.lock = asyncio.Lock()
-
-    async def acquire(self):
-        """Wait until a request is allowed."""
-        async with self.lock:
-            current = datetime.now()
-            elapsed = (current - self.last_check).total_seconds()
-            self.last_check = current
-
-            # Add tokens based on time elapsed
-            self.allowance += elapsed * (self.rate / self.per_seconds)
-            if self.allowance > self.rate:
-                self.allowance = self.rate
-
-            # If not enough tokens, wait
-            if self.allowance < 1.0:
-                sleep_time = (1.0 - self.allowance) * (self.per_seconds / self.rate)
-                await asyncio.sleep(sleep_time)
-                self.allowance = 0.0
-            else:
-                self.allowance -= 1.0
-
-
-class HubSpotConnectorError(Exception):
-    """Base exception for HubSpot connector errors."""
-    pass
-
-
-class HubSpotAuthError(HubSpotConnectorError):
-    """Authentication or authorization error."""
-    pass
-
-
-class HubSpotRateLimitError(HubSpotConnectorError):
-    """Rate limit exceeded."""
-    pass
+logger = logging.getLogger(__name__)
 
 
 class HubSpotConnector:
-    """HubSpot API connector with field mapping and rate limiting."""
+    """Connector for syncing HubSpot tickets to feedback."""
 
-    def __init__(self, api_key: str | None = None):
-        """
-        Initialize HubSpot connector.
+    def __init__(self, session: AsyncSession):
+        """Initialize HubSpot connector.
 
         Args:
-            api_key: HubSpot API key (Private App token)
-
-        Raises:
-            HubSpotAuthError: If API key is not provided
+            session: Database session
         """
-        self.api_key = api_key or settings.hubspot_api_key
-        if not self.api_key:
-            raise HubSpotAuthError("HUBSPOT_API_KEY not configured")
-
-        self.client = HubSpot(access_token=self.api_key)
-        self.rate_limiter = HubSpotRateLimiter(rate=10, per_seconds=1)
-
-        # Load field mappings from JSON
-        mapping_file = Path(__file__).parent / "hubspot_mapping.json"
-        with open(mapping_file) as f:
-            self.mappings = json.load(f)
+        self.session = session
+        self.feedback_repo = FeedbackRepository(session)
+        self.identity_service = IdentityResolutionService(session)
+        self.api_key = settings.hubspot_api_key
+        self.base_url = "https://api.hubapi.com"
 
     async def fetch_tickets(
         self,
         limit: int = 100,
-        after: str | None = None,
-    ) -> dict[str, Any]:
+        since: Optional[datetime] = None,
+    ) -> List[dict]:
         """
         Fetch tickets from HubSpot.
 
         Args:
-            limit: Maximum number of tickets to fetch (max 100)
-            after: Pagination cursor from previous response
+            limit: Maximum number of tickets to fetch
+            since: Only fetch tickets created/updated after this time
 
         Returns:
-            Dictionary with 'results' list and optional 'paging' dict
-
-        Raises:
-            HubSpotRateLimitError: If rate limit is exceeded
-            HubSpotConnectorError: For other API errors
+            List of ticket dictionaries from HubSpot
         """
-        await self.rate_limiter.acquire()
+        logger.info(f"Fetching tickets from HubSpot (limit={limit})")
 
-        try:
-            # Get ticket properties from mapping
-            properties = list(self.mappings["ticket_mapping"].keys())
-
-            response = self.client.crm.tickets.basic_api.get_page(
-                limit=min(limit, 100),
-                after=after,
-                properties=properties,
-                associations=["contacts", "companies"],
-            )
-
-            # Transform tickets using field mapping
-            transformed = [
-                self._transform_ticket(ticket) for ticket in response.results
-            ]
-
-            result = {"results": transformed}
-
-            # Include pagination info if available
-            if response.paging:
-                result["paging"] = {
-                    "next": response.paging.next.dict() if response.paging.next else None
-                }
-
-            return result
-
-        except TicketsException as e:
-            if e.status == 429:
-                raise HubSpotRateLimitError(f"Rate limit exceeded: {e}")
-            elif e.status in (401, 403):
-                raise HubSpotAuthError(f"Authentication failed: {e}")
-            else:
-                raise HubSpotConnectorError(f"Failed to fetch tickets: {e}")
-
-    def _transform_ticket(self, ticket: Any) -> dict[str, Any]:
-        """
-        Transform HubSpot ticket to JisrVoC schema.
-
-        Args:
-            ticket: HubSpot ticket object
-
-        Returns:
-            Transformed ticket dictionary
-        """
-        props = ticket.properties
-        mapping = self.mappings["ticket_mapping"]
-
-        transformed = {
-            "external_id": str(ticket.id),
-            "source": "hubspot",
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
         }
 
-        # Apply field mapping
-        for hs_field, jisr_field in mapping.items():
-            value = props.get(hs_field)
-            if value is not None:
-                transformed[jisr_field] = value
+        # Build properties list - fields we want from each ticket
+        properties = [
+            "subject",
+            "content",
+            "hs_ticket_id",
+            "hs_ticket_category",
+            "hs_ticket_priority",
+            "hs_pipeline_stage",
+            "createdate",
+            "hs_lastmodifieddate",
+            "source_type",
+        ]
 
-        # Add metadata with all original properties
-        transformed["metadata"] = props
+        params = {
+            "limit": limit,
+            "properties": ",".join(properties),
+        }
 
-        # Extract customer email from associations (if available)
-        if hasattr(ticket, "associations") and ticket.associations:
-            # This will be filled when we query with association data
-            transformed["customer_email"] = None  # TODO: Extract from associations
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_url}/crm/v3/objects/tickets",
+                headers=headers,
+                params=params,
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            data = response.json()
 
-        return transformed
+        tickets = data.get("results", [])
+        logger.info(f"Fetched {len(tickets)} tickets from HubSpot")
 
-    async def fetch_contacts(
+        return tickets
+
+    async def fetch_ticket_contact(self, ticket_id: str) -> Optional[dict]:
+        """
+        Fetch associated contact information for a HubSpot ticket.
+
+        Args:
+            ticket_id: HubSpot ticket ID
+
+        Returns:
+            Contact dictionary with email and name, or None if no contact found
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                # Get contact associations for this ticket
+                response = await client.get(
+                    f"{self.base_url}/crm/v3/objects/tickets/{ticket_id}/associations/contacts",
+                    headers=headers,
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+                associations = response.json()
+
+                results = associations.get("results", [])
+                if not results:
+                    logger.debug(f"No contacts associated with ticket {ticket_id}")
+                    return None
+
+                # Get the first associated contact ID
+                contact_id = results[0].get("id")
+                if not contact_id:
+                    return None
+
+                # Fetch contact details
+                contact_response = await client.get(
+                    f"{self.base_url}/crm/v3/objects/contacts/{contact_id}",
+                    headers=headers,
+                    params={"properties": "email,firstname,lastname"},
+                    timeout=30.0,
+                )
+                contact_response.raise_for_status()
+                contact_data = contact_response.json()
+
+                properties = contact_data.get("properties", {})
+                email = properties.get("email")
+
+                # Construct full name
+                firstname = properties.get("firstname") or ""
+                lastname = properties.get("lastname") or ""
+                name = f"{firstname} {lastname}".strip() or None
+
+                if email:
+                    logger.info(f"Found contact for ticket {ticket_id}: {email}")
+                    return {
+                        "id": contact_id,
+                        "email": email,
+                        "name": name,
+                    }
+
+                return None
+
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"Failed to fetch contact for ticket {ticket_id}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching contact for ticket {ticket_id}: {e}", exc_info=True)
+            return None
+
+    async def sync_ticket_to_feedback(
+        self,
+        ticket: dict,
+    ) -> Feedback:
+        """
+        Sync a single HubSpot ticket to feedback table.
+
+        Args:
+            ticket: HubSpot ticket dictionary
+
+        Returns:
+            Created or updated Feedback instance
+        """
+        ticket_id = ticket.get("id")
+        properties = ticket.get("properties", {})
+
+        # Extract ticket data - ensure content is never null
+        title = properties.get("subject") or "Untitled ticket"
+        content = properties.get("content") or "(No content provided)"
+        external_id = str(ticket_id)
+
+        # Check if feedback already exists
+        existing = await self.feedback_repo.get_by_source_and_external_id(
+            source="hubspot",
+            external_id=external_id,
+        )
+
+        if existing:
+            logger.info(f"Ticket {ticket_id} already exists as feedback {existing.id}, skipping")
+            return existing
+
+        # Parse timestamps from HubSpot (ISO 8601 format)
+        created_at_str = properties.get("createdate")
+        updated_at_str = properties.get("hs_lastmodifieddate")
+
+        logger.info(f"HubSpot ticket {ticket_id} timestamps - createdate: {created_at_str}, lastmodified: {updated_at_str}")
+
+        # Parse or use current time as fallback
+        from dateutil import parser as date_parser
+        created_at = None
+        updated_at = None
+
+        if created_at_str:
+            try:
+                parsed = date_parser.parse(created_at_str)
+                # Convert to naive UTC datetime (remove timezone info)
+                created_at = parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+                logger.info(f"Parsed createdate: {created_at}")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse createdate '{created_at_str}' for ticket {ticket_id}: {e}")
+
+        if not created_at:
+            created_at = datetime.utcnow()
+            logger.info(f"Using current time for created_at: {created_at}")
+
+        if updated_at_str:
+            try:
+                parsed = date_parser.parse(updated_at_str)
+                # Convert to naive UTC datetime (remove timezone info)
+                updated_at = parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+                logger.info(f"Parsed lastmodifieddate: {updated_at}")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse lastmodifieddate '{updated_at_str}' for ticket {ticket_id}: {e}")
+
+        if not updated_at:
+            updated_at = created_at
+            logger.info(f"Using created_at for updated_at: {updated_at}")
+
+        # Create new feedback
+        feedback = await self.feedback_repo.create(
+            source="hubspot",
+            external_id=external_id,
+            source_channel=properties.get("source_type") or "email",
+            title=title,
+            content=content,
+            priority=properties.get("hs_ticket_priority"),
+            status=properties.get("hs_pipeline_stage") or "open",
+            created_at=created_at,
+            updated_at=updated_at,
+            metadata={
+                "category": properties.get("hs_ticket_category"),
+                "hubspot_createdate": created_at_str,
+                "hubspot_lastmodifieddate": updated_at_str,
+            },
+        )
+
+        await self.feedback_repo.commit()
+        logger.info(f"Created feedback {feedback.id} from HubSpot ticket {ticket_id}")
+
+        # Fetch associated contact and resolve customer identity
+        contact = await self.fetch_ticket_contact(str(ticket_id))
+        if contact:
+            logger.info(f"Resolving identity for feedback {feedback.id} with contact {contact.get('email')}")
+            customer = await self.identity_service.resolve_feedback_identity(
+                feedback=feedback,
+                email=contact.get("email"),
+                name=contact.get("name"),
+                hubspot_contact_id=contact.get("id"),
+            )
+            if customer:
+                logger.info(f"Successfully linked feedback {feedback.id} to customer {customer.id}")
+        else:
+            logger.debug(f"No contact found for ticket {ticket_id}, skipping identity resolution")
+
+        return feedback
+
+    async def sync_tickets(
         self,
         limit: int = 100,
-        after: str | None = None,
-    ) -> dict[str, Any]:
+        since: Optional[datetime] = None,
+    ) -> List[Feedback]:
         """
-        Fetch contacts from HubSpot.
+        Sync HubSpot tickets to feedback table.
 
         Args:
-            limit: Maximum number of contacts to fetch
-            after: Pagination cursor
+            limit: Maximum number of tickets to sync
+            since: Only sync tickets created/updated after this time
 
         Returns:
-            Dictionary with 'results' and optional 'paging'
+            List of created/updated Feedback instances
         """
-        await self.rate_limiter.acquire()
+        logger.info(f"Starting HubSpot ticket sync (limit={limit})")
 
-        try:
-            properties = list(self.mappings["contact_mapping"].keys())
+        # Fetch tickets from HubSpot
+        tickets = await self.fetch_tickets(limit=limit, since=since)
 
-            response = self.client.crm.contacts.basic_api.get_page(
-                limit=min(limit, 100),
-                after=after,
-                properties=properties,
-            )
+        # Sync each ticket to feedback
+        synced_feedback = []
+        for ticket in tickets:
+            try:
+                feedback = await self.sync_ticket_to_feedback(ticket)
+                synced_feedback.append(feedback)
+            except Exception as e:
+                logger.error(
+                    f"Error syncing ticket {ticket.get('id')}: {e}",
+                    exc_info=True,
+                )
+                # Rollback and continue with next ticket
+                await self.session.rollback()
+                continue
 
-            transformed = [
-                self._transform_contact(contact) for contact in response.results
-            ]
-
-            result = {"results": transformed}
-            if response.paging:
-                result["paging"] = {
-                    "next": response.paging.next.dict() if response.paging.next else None
-                }
-
-            return result
-
-        except ContactsException as e:
-            if e.status == 429:
-                raise HubSpotRateLimitError(f"Rate limit exceeded: {e}")
-            elif e.status in (401, 403):
-                raise HubSpotAuthError(f"Authentication failed: {e}")
-            else:
-                raise HubSpotConnectorError(f"Failed to fetch contacts: {e}")
-
-    def _transform_contact(self, contact: Any) -> dict[str, Any]:
-        """Transform HubSpot contact to JisrVoC schema."""
-        props = contact.properties
-        mapping = self.mappings["contact_mapping"]
-
-        transformed = {
-            "external_id": str(contact.id),
-            "source": "hubspot",
-        }
-
-        # Build full name from first + last
-        first = props.get("firstname", "")
-        last = props.get("lastname", "")
-        transformed["name"] = f"{first} {last}".strip() or "Unknown"
-
-        # Apply other mappings
-        for hs_field, jisr_field in mapping.items():
-            if hs_field not in ("firstname", "lastname"):  # Already handled
-                value = props.get(hs_field)
-                if value is not None:
-                    transformed[jisr_field] = value
-
-        transformed["metadata"] = props
-        return transformed
-
-    async def fetch_companies(
-        self,
-        limit: int = 100,
-        after: str | None = None,
-    ) -> dict[str, Any]:
-        """
-        Fetch companies from HubSpot.
-
-        Args:
-            limit: Maximum number of companies to fetch
-            after: Pagination cursor
-
-        Returns:
-            Dictionary with 'results' and optional 'paging'
-        """
-        await self.rate_limiter.acquire()
-
-        try:
-            properties = list(self.mappings["company_mapping"].keys())
-
-            response = self.client.crm.companies.basic_api.get_page(
-                limit=min(limit, 100),
-                after=after,
-                properties=properties,
-            )
-
-            transformed = [
-                self._transform_company(company) for company in response.results
-            ]
-
-            result = {"results": transformed}
-            if response.paging:
-                result["paging"] = {
-                    "next": response.paging.next.dict() if response.paging.next else None
-                }
-
-            return result
-
-        except CompaniesException as e:
-            if e.status == 429:
-                raise HubSpotRateLimitError(f"Rate limit exceeded: {e}")
-            elif e.status in (401, 403):
-                raise HubSpotAuthError(f"Authentication failed: {e}")
-            else:
-                raise HubSpotConnectorError(f"Failed to fetch companies: {e}")
-
-    def _transform_company(self, company: Any) -> dict[str, Any]:
-        """Transform HubSpot company to JisrVoC schema."""
-        props = company.properties
-        mapping = self.mappings["company_mapping"]
-
-        transformed = {
-            "external_id": str(company.id),
-            "source": "hubspot",
-        }
-
-        for hs_field, jisr_field in mapping.items():
-            value = props.get(hs_field)
-            if value is not None:
-                transformed[jisr_field] = value
-
-        transformed["metadata"] = props
-        return transformed
-
-    async def close(self):
-        """Clean up resources (placeholder for future connection pooling)."""
-        pass
-
-    async def __aenter__(self):
-        """Async context manager entry."""
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.close()
+        logger.info(f"Synced {len(synced_feedback)} tickets from HubSpot")
+        return synced_feedback

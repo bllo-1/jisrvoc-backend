@@ -90,18 +90,43 @@ app.include_router(api_router, prefix="/api/v1")
 app.include_router(webhooks_new.router, prefix="/api/public/webhooks", tags=["Webhooks"])
 
 
+@app.get("/health", tags=["Ops"])
 @app.get("/api/v1/healthz", tags=["Ops"])
 async def healthz():
-    """Health check endpoint for load balancers."""
+    """Basic health check endpoint for load balancers."""
     return {"status": "ok"}
 
 
 @app.get("/api/v1/readyz", tags=["Ops"])
 async def readyz():
-    """Readiness check - verifies app is ready to serve traffic."""
-    # TODO: check DB + Redis connectivity once wired
-    return {
+    """Readiness check - verifies app dependencies are healthy."""
+    health = {
         "status": "ready",
-        "mockData": settings.use_mock_data,
         "environment": settings.app_env,
+        "mockData": settings.use_mock_data,
+        "checks": {}
     }
+
+    # Check database connectivity
+    try:
+        from .db.session import get_db
+        from sqlalchemy import text
+        async for db in get_db():
+            await db.execute(text("SELECT 1"))
+            health["checks"]["database"] = "ok"
+            break
+    except Exception as e:
+        health["checks"]["database"] = f"error: {str(e)}"
+        health["status"] = "degraded"
+
+    # Check Redis connectivity
+    try:
+        from .core.cache import get_redis
+        redis_client = get_redis()
+        redis_client.ping()
+        health["checks"]["redis"] = "ok"
+    except Exception as e:
+        health["checks"]["redis"] = f"error: {str(e)}"
+        health["status"] = "degraded"
+
+    return health
