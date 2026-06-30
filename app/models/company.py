@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 if TYPE_CHECKING:
-    from app.models.customer import Customer
+    from app.models.customer import LegacyCustomer
     from app.models.feedback import Feedback
 
 
@@ -44,7 +44,7 @@ class Company(Base):
     )
 
     # Relationships
-    customers: Mapped[list["Customer"]] = relationship("Customer", back_populates="company")
+    customers: Mapped[list["LegacyCustomer"]] = relationship("LegacyCustomer", back_populates="company")
     feedback: Mapped[list["Feedback"]] = relationship("Feedback", back_populates="company")
 
     __table_args__ = (

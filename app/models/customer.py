@@ -13,10 +13,12 @@ if TYPE_CHECKING:
     from app.models.feedback import Feedback
 
 
-class Customer(Base):
+class LegacyCustomer(Base):
     """
-    Customer/Contact entity identified by email.
+    DEPRECATED: Phase 1/2 Customer model.
+    Use Customer from customer_new.py for Phase 3.
 
+    Customer/Contact entity identified by email.
     Linked to Company via email domain matching.
     """
     __tablename__ = "customers"
@@ -57,4 +59,4 @@ class Customer(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Customer(id={self.id}, email='{self.email}', name='{self.name}')>"
+        return f"<LegacyCustomer(id={self.id}, email='{self.email}', name='{self.name}')>"

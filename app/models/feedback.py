@@ -10,7 +10,7 @@ from pgvector.sqlalchemy import Vector
 from app.db.base import Base
 
 if TYPE_CHECKING:
-    from app.models.customer import Customer
+    from app.models.customer import LegacyCustomer
     from app.models.company import Company
     from app.models.classification import Classification
 
@@ -64,7 +64,7 @@ class Feedback(Base):
     ingested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     # Relationships
-    customer: Mapped["Customer | None"] = relationship("Customer", back_populates="feedback")
+    customer: Mapped["LegacyCustomer | None"] = relationship("LegacyCustomer", back_populates="feedback")
     company: Mapped["Company | None"] = relationship("Company", back_populates="feedback")
     classification: Mapped["Classification | None"] = relationship(
         "Classification", back_populates="feedback", uselist=False
