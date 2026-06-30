@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import datetime, date
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class SourceType(str, Enum):
@@ -46,7 +46,11 @@ class BetStatus(str, Enum):
 
 
 class UrgencyDistribution(BaseModel):
-    low: int = 0; medium: int = 0; high: int = 0
+    model_config = ConfigDict(populate_by_name=True)
+
+    low: int = Field(0, serialization_alias="Low")
+    medium: int = Field(0, serialization_alias="Medium")
+    high: int = Field(0, serialization_alias="High")
 
 
 class OverviewMetrics(BaseModel):
