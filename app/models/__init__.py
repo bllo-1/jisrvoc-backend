@@ -6,7 +6,7 @@ from .feedback_item import FeedbackItem, FeedbackCategory, ProductArea, Sentimen
 from .enrichment import Enrichment
 from .embedding import Embedding
 from .vote import Vote
-from .customer import Customer
+from .customer_new import Customer
 from .source_connector import SourceConnector, ConnectorStatus
 from .theme import Theme, ThemeTrend
 from .bet import ProductBet, BetStatus, BetEvidence, WritebackLog

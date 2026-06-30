@@ -42,14 +42,14 @@ class RawTicket(Base):
 
     # Source metadata
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("source_connector.id"), nullable=False)
-    source_type: Mapped[SourceType] = mapped_column(SQLEnum(SourceType, name="source_type"), nullable=False)
+    source_type: Mapped[SourceType] = mapped_column(SQLEnum(SourceType, name="source_type", native_enum=True, values_callable=lambda x: [e.value for e in x]), nullable=False)
     external_id: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Original content
     subject: Mapped[str | None] = mapped_column(String(500))
     body: Mapped[str | None] = mapped_column(Text)
     raw_payload: Mapped[dict | None] = mapped_column(JSON)
-    language_raw: Mapped[Language | None] = mapped_column(SQLEnum(Language, name="lang"))
+    language_raw: Mapped[Language | None] = mapped_column(SQLEnum(Language, name="lang", native_enum=True, values_callable=lambda x: [e.value for e in x]))
 
     # Customer relationship
     customer_id: Mapped[str | None] = mapped_column(String(255), ForeignKey("customer.id"))

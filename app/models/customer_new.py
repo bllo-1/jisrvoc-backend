@@ -36,7 +36,7 @@ class Customer(Base):
     # Company metadata
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     domain: Mapped[str | None] = mapped_column(String(255))
-    segment: Mapped[Segment | None] = mapped_column(SQLEnum(Segment, name="segment"))
+    segment: Mapped[Segment | None] = mapped_column(SQLEnum(Segment, name="segment", native_enum=True, values_callable=lambda x: [e.value for e in x]))
     lifecycle_stage: Mapped[str | None] = mapped_column(String(100))
     industry: Mapped[str | None] = mapped_column(String(255))
     account_size: Mapped[int | None] = mapped_column(Integer)

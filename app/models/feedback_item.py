@@ -87,14 +87,14 @@ class FeedbackItem(Base):
 
     # AI-enriched fields
     summary_en: Mapped[str | None] = mapped_column(Text)  # AI summary, always English
-    category: Mapped[FeedbackCategory | None] = mapped_column(SQLEnum(FeedbackCategory, name="feedback_category"))
-    area: Mapped[ProductArea | None] = mapped_column(SQLEnum(ProductArea, name="product_area"))
-    sentiment: Mapped[Sentiment | None] = mapped_column(SQLEnum(Sentiment, name="sentiment"))
-    urgency: Mapped[Urgency | None] = mapped_column(SQLEnum(Urgency, name="urgency"))
-    language: Mapped[Language | None] = mapped_column(SQLEnum(Language, name="lang"))
+    category: Mapped[FeedbackCategory | None] = mapped_column(SQLEnum(FeedbackCategory, name="feedback_category", native_enum=True, values_callable=lambda x: [e.value for e in x]))
+    area: Mapped[ProductArea | None] = mapped_column(SQLEnum(ProductArea, name="product_area", native_enum=True, values_callable=lambda x: [e.value for e in x]))
+    sentiment: Mapped[Sentiment | None] = mapped_column(SQLEnum(Sentiment, name="sentiment", native_enum=True, values_callable=lambda x: [e.value for e in x]))
+    urgency: Mapped[Urgency | None] = mapped_column(SQLEnum(Urgency, name="urgency", native_enum=True, values_callable=lambda x: [e.value for e in x]))
+    language: Mapped[Language | None] = mapped_column(SQLEnum(Language, name="lang", native_enum=True, values_callable=lambda x: [e.value for e in x]))
 
     # Denormalized from customer at enrich time
-    segment: Mapped[Segment | None] = mapped_column(SQLEnum(Segment, name="segment"))
+    segment: Mapped[Segment | None] = mapped_column(SQLEnum(Segment, name="segment", native_enum=True, values_callable=lambda x: [e.value for e in x]))
     customer_id: Mapped[str | None] = mapped_column(String(255), ForeignKey("customer.id"))
 
     # Chargebee enrichment fields (Phase 5)

@@ -42,12 +42,12 @@ class ProductBet(Base):
     # Bet content (AI-generated)
     title = Column(String, nullable=False)
     problem_statement = Column(Text, nullable=True)
-    affected_segments = Column(ARRAY(SQLEnum(Segment, name="segment")), nullable=False, default=[])
+    affected_segments = Column(ARRAY(SQLEnum(Segment, name="segment", native_enum=True, values_callable=lambda x: [e.value for e in x])), nullable=False, default=[])
     est_customer_count = Column(Integer, nullable=True)
     why_now = Column(Text, nullable=True)
 
     # Status tracking
-    status = Column(SQLEnum(BetStatus, name="bet_status"), nullable=False, default=BetStatus.DRAFT)
+    status = Column(SQLEnum(BetStatus, name="bet_status", native_enum=True, values_callable=lambda x: [e.value for e in x]), nullable=False, default=BetStatus.DRAFT)
     declined_reason = Column(Text, nullable=True)
     owner_pm = Column(String, nullable=True)  # app_user.id
 
@@ -87,7 +87,7 @@ class WritebackLog(Base):
     bet_id = Column(UUID(as_uuid=True), ForeignKey("product_bet.id"), nullable=False)
     hubspot_ticket_id = Column(String, nullable=False)
     action = Column(String, nullable=False)  # 'note' | 'property_update'
-    status_value = Column(SQLEnum(BetStatus, name="bet_status"), nullable=False)
+    status_value = Column(SQLEnum(BetStatus, name="bet_status", native_enum=True, values_callable=lambda x: [e.value for e in x]), nullable=False)
     pm_id = Column(String, nullable=False)
     performed_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
     result = Column(String, nullable=False)  # 'success' | 'failed:<reason>'

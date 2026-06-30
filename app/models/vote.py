@@ -39,7 +39,7 @@ class Vote(Base):
     )
 
     # Vote metadata
-    source: Mapped[SourceType] = mapped_column(SQLEnum(SourceType, name="source_type"), nullable=False)
+    source: Mapped[SourceType] = mapped_column(SQLEnum(SourceType, name="source_type", native_enum=True, values_callable=lambda x: [e.value for e in x]), nullable=False)
     vote_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Timestamp

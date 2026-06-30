@@ -29,7 +29,7 @@ class Theme(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name_en = Column(String, nullable=False)
     description_en = Column(String, nullable=True)
-    trend = Column(SQLEnum(ThemeTrend, name="theme_trend"), nullable=False, default=ThemeTrend.NEW)
+    trend = Column(SQLEnum(ThemeTrend, name="theme_trend", native_enum=True, values_callable=lambda x: [e.value for e in x]), nullable=False, default=ThemeTrend.NEW)
 
     # Centroid for stable identity matching (1536 for text-embedding-3-small)
     centroid = Column(Vector(1536), nullable=True)

@@ -40,10 +40,10 @@ class SourceConnector(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # Connector metadata
-    type: Mapped[SourceType] = mapped_column(SQLEnum(SourceType, name="source_type"), nullable=False)
+    type: Mapped[SourceType] = mapped_column(SQLEnum(SourceType, name="source_type", native_enum=True, values_callable=lambda x: [e.value for e in x]), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[ConnectorStatus] = mapped_column(
-        SQLEnum(ConnectorStatus, name="connector_status"),
+        SQLEnum(ConnectorStatus, name="connector_status", native_enum=True, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=ConnectorStatus.DISCONNECTED
     )
