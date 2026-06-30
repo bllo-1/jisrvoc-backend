@@ -14,7 +14,7 @@ from app.models.feedback import Feedback
 from app.services.classification import ClassificationService
 from app.services.embedding import EmbeddingService
 from app.repositories.feedback import FeedbackRepository
-from app.ai.llm_provider import create_llm_provider
+from app.ai.llm_provider import create_llm_provider, LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class EnrichmentWorker:
         """
         self.session = session
         self.feedback_repo = FeedbackRepository(session)
-        self.llm_provider = create_llm_provider()
+        self.llm_provider = create_llm_provider(LLMProvider.OPENAI)
         self.classification_service = ClassificationService(session, self.llm_provider)
         self.embedding_service = EmbeddingService(session, self.llm_provider)
 
