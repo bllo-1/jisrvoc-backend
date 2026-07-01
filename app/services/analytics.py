@@ -413,19 +413,19 @@ def get_rule_usage_stats() -> Dict[str, Any]:
         })
 
     compliance_rules = []
-    for regulation in rule_engine.compliance_regulations:
+    for regulation in rule_engine.compliance_lexicon.get("regulations", []):
         compliance_rules.append({
-            "regulation": regulation.name_en,
-            "keywords_count": len(regulation.keywords_en) + len(regulation.keywords_ar),
+            "regulation": regulation.get("name"),
+            "keywords_count": len(regulation.get("key_terms", [])),
             "match_count": 0,  # TODO: Track in Redis or DB
             "note": "Match counts not tracked yet"
         })
 
     scope_rules = []
-    for scope in rule_engine.l1_scopes:
+    for scope in rule_engine.taxonomy.get("scopes", []):
         scope_rules.append({
-            "scope": scope.scope,
-            "keywords_count": len(scope.keywords_en) + len(scope.keywords_ar),
+            "scope": scope.get("name"),
+            "keywords_count": len(scope.get("keywords", [])),
             "match_count": 0,  # TODO: Track in Redis or DB
             "note": "Match counts not tracked yet"
         })
