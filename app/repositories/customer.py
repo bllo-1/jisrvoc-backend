@@ -4,56 +4,56 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.customer_new import Customer
+from app.models.customer import LegacyCustomer
 from app.repositories.base import BaseRepository
 
 
-class CustomerRepository(BaseRepository[Customer]):
-    """Repository for Customer model operations."""
+class CustomerRepository(BaseRepository[LegacyCustomer]):
+    """Repository for LegacyCustomer (Phase 1) model operations."""
 
     def __init__(self, session: AsyncSession):
         """Initialize customer repository."""
-        super().__init__(Customer, session)
+        super().__init__(LegacyCustomer, session)
 
-    async def get_by_email(self, email: str) -> Optional[Customer]:
+    async def get_by_email(self, email: str) -> Optional[LegacyCustomer]:
         """Get customer by email.
 
         Args:
             email: Customer email address
 
         Returns:
-            Customer instance or None if not found
+            LegacyCustomer instance or None if not found
         """
         result = await self.session.execute(
-            select(Customer).where(Customer.email == email)
+            select(LegacyCustomer).where(LegacyCustomer.email == email)
         )
         return result.scalar_one_or_none()
 
-    async def get_by_hubspot_id(self, hubspot_contact_id: str) -> Optional[Customer]:
+    async def get_by_hubspot_id(self, hubspot_contact_id: str) -> Optional[LegacyCustomer]:
         """Get customer by HubSpot contact ID.
 
         Args:
             hubspot_contact_id: HubSpot contact ID
 
         Returns:
-            Customer instance or None if not found
+            LegacyCustomer instance or None if not found
         """
         result = await self.session.execute(
-            select(Customer).where(Customer.hubspot_contact_id == hubspot_contact_id)
+            select(LegacyCustomer).where(LegacyCustomer.hubspot_contact_id == hubspot_contact_id)
         )
         return result.scalar_one_or_none()
 
-    async def get_by_zendesk_id(self, zendesk_user_id: str) -> Optional[Customer]:
+    async def get_by_zendesk_id(self, zendesk_user_id: str) -> Optional[LegacyCustomer]:
         """Get customer by Zendesk user ID.
 
         Args:
             zendesk_user_id: Zendesk user ID
 
         Returns:
-            Customer instance or None if not found
+            LegacyCustomer instance or None if not found
         """
         result = await self.session.execute(
-            select(Customer).where(Customer.zendesk_user_id == zendesk_user_id)
+            select(LegacyCustomer).where(LegacyCustomer.zendesk_user_id == zendesk_user_id)
         )
         return result.scalar_one_or_none()
 
@@ -66,7 +66,7 @@ class CustomerRepository(BaseRepository[Customer]):
         zendesk_user_id: Optional[str] = None,
         role: Optional[str] = None,
         tier: Optional[str] = None,
-    ) -> Customer:
+    ) -> LegacyCustomer:
         """Create or update customer by email.
 
         Args:
@@ -79,7 +79,7 @@ class CustomerRepository(BaseRepository[Customer]):
             tier: Customer tier
 
         Returns:
-            Customer instance
+            LegacyCustomer instance
         """
         existing = await self.get_by_email(email)
 

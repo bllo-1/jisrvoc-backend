@@ -1,8 +1,8 @@
 """Feedback repository for database operations."""
 
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from datetime import datetime
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.feedback import Feedback
@@ -128,3 +128,44 @@ class FeedbackRepository(BaseRepository[Feedback]):
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def list_all(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        source: Optional[str] = None
+    ) -> Tuple[List[Feedback], int]:
+        """List all feedback with pagination and filtering.
+
+        Args:
+            limit: Maximum results per page
+            offset: Number of records to skip
+            source: Optional source filter (hubspot, zendesk, etc)
+
+        Returns:
+            Tuple of (feedback_list, total_count)
+        """
+        from sqlalchemy.orm import defer
+
+        # Build base query, defer loading the embedding column to avoid pgvector deserialization issues
+        query = select(Feedback).options(defer(Feedback.embedding))
+
+        if source:
+            query = query.where(Feedback.source == source)
+
+        # Get total count
+        count_query = select(func.count()).select_from(Feedback)
+        if source:
+            count_query = count_query.where(Feedback.source == source)
+
+        count_result = await self.session.execute(count_query)
+        total = count_result.scalar()
+
+        # Get paginated results
+        query = query.order_by(Feedback.created_at.desc())
+        query = query.limit(limit).offset(offset)
+
+        result = await self.session.execute(query)
+        items = list(result.scalars().all())
+
+        return items, total

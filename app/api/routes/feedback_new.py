@@ -2,8 +2,9 @@
 Feedback API endpoints - item listing, enrichment, tagging.
 Matches frontend contract from jisrvoc-frontend/src/lib/api/feedback.ts
 """
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends, HTTPException
 from typing import Optional, List
+from sqlalchemy.ext.asyncio import AsyncSession
 from ...schemas_new import (
     FeedbackItem,
     FeedbackPage,
@@ -15,14 +16,51 @@ from ...schemas_new import (
     Urgency,
     Source,
     Segment,
+    Language,
 )
 from ... import mock_data
+from ...db.session import get_db
+from ...repositories.feedback import FeedbackRepository
+from ...models.feedback import Feedback
 
 router = APIRouter()
 
 
+def map_feedback_to_item(feedback: Feedback) -> FeedbackItem:
+    """Map Phase 1 Feedback model to Phase 3 FeedbackItem schema."""
+    # Map source to enum
+    source_map = {
+        "hubspot": Source.hubspot,
+        "zendesk": Source.zendesk,
+        "canny": Source.canny,
+        "jira": Source.jira,
+    }
+
+    # Default enrichment values for un-enriched feedback
+    return FeedbackItem(
+        id=str(feedback.id),
+        summary=feedback.title,
+        raw_text=feedback.content,
+        source=source_map.get(feedback.source.lower(), Source.hubspot),
+        source_ref=feedback.external_id,
+        category=Category.pain_point,  # Default - will be enriched later
+        product_area=ProductArea.other,  # Default - will be enriched later
+        sentiment=Sentiment.neutral,  # Default - will be enriched later
+        urgency=Urgency.medium,  # Default - will be enriched later
+        language=Language.en,  # Default - will be enriched later
+        customer=feedback.customer_email or "Unknown",
+        customer_id=str(feedback.customer_id) if feedback.customer_id else "unknown",
+        segment=Segment.smb,  # Default - will be enriched later
+        date=feedback.created_at.isoformat(),
+        theme_id=None,
+        split_from=None,
+        tags=[],
+    )
+
+
 @router.get("", response_model=FeedbackPage)
 async def list_feedback(
+    db: AsyncSession = Depends(get_db),
     cursor: Optional[str] = None,
     limit: int = Query(20, le=100),
     category: Optional[Category] = None,
@@ -38,77 +76,107 @@ async def list_feedback(
     @endpoint GET /api/v1/feedback
     Returns paginated feedback with optional filters.
     """
-    # Start with all feedback
-    filtered = list(mock_data.FEEDBACK)
-
-    # Apply filters
-    if category:
-        filtered = [f for f in filtered if f.category == category]
-    if product_area:
-        filtered = [f for f in filtered if f.product_area == product_area]
-    if sentiment:
-        filtered = [f for f in filtered if f.sentiment == sentiment]
-    if urgency:
-        filtered = [f for f in filtered if f.urgency == urgency]
-    if source:
-        filtered = [f for f in filtered if f.source == source]
-    if segment:
-        filtered = [f for f in filtered if f.segment == segment]
-    if theme_id:
-        filtered = [f for f in filtered if f.theme_id == theme_id]
-    if customer_id:
-        filtered = [f for f in filtered if f.customer_id == customer_id]
-
-    # Sort by date descending (newest first)
-    filtered.sort(key=lambda f: f.date, reverse=True)
-
-    # Cursor pagination (simplified for mock)
-    start_idx = 0
+    # Parse cursor to offset
+    offset = 0
     if cursor:
-        # Cursor format: "idx-{number}"
         try:
-            start_idx = int(cursor.split("-")[1])
+            offset = int(cursor.split("-")[1])
         except (IndexError, ValueError):
-            start_idx = 0
+            offset = 0
 
-    page_items = filtered[start_idx:start_idx + limit]
+    # Map source enum to database value
+    source_filter = None
+    if source:
+        source_map = {
+            Source.hubspot: "hubspot",
+            Source.zendesk: "zendesk",
+            Source.canny: "canny",
+            Source.jira: "jira",
+        }
+        source_filter = source_map.get(source)
+
+    # Query database
+    feedback_repo = FeedbackRepository(db)
+    feedback_items, total = await feedback_repo.list_all(
+        limit=limit,
+        offset=offset,
+        source=source_filter
+    )
+
+    # Map to FeedbackItem schema
+    items = [map_feedback_to_item(f) for f in feedback_items]
+
+    # NOTE: Phase 1 doesn't have enrichment data yet, so category/product_area/sentiment/urgency/segment filters
+    # are not applied. These filters will work once Phase 2 enrichment is implemented.
+    # For now, we only filter by source at the database level.
+
+    # Apply in-memory filters for enrichment fields (once enriched)
+    if category:
+        items = [f for f in items if f.category == category]
+    if product_area:
+        items = [f for f in items if f.product_area == product_area]
+    if sentiment:
+        items = [f for f in items if f.sentiment == sentiment]
+    if urgency:
+        items = [f for f in items if f.urgency == urgency]
+    if segment:
+        items = [f for f in items if f.segment == segment]
+    if theme_id:
+        items = [f for f in items if f.theme_id == theme_id]
+    if customer_id:
+        items = [f for f in items if f.customer_id == customer_id]
+
+    # Calculate next cursor
     next_cursor = None
-    if start_idx + limit < len(filtered):
-        next_cursor = f"idx-{start_idx + limit}"
+    if offset + limit < total:
+        next_cursor = f"idx-{offset + limit}"
 
     return FeedbackPage(
-        items=page_items,
+        items=items,
         next_cursor=next_cursor,
-        total=len(filtered),
+        total=total,
     )
 
 
 @router.get("/{feedback_id}", response_model=FeedbackItem)
-async def get_feedback(feedback_id: str):
+async def get_feedback(feedback_id: str, db: AsyncSession = Depends(get_db)):
     """
     @endpoint GET /api/v1/feedback/:id
     Returns single feedback item by ID.
     """
-    item = next((f for f in mock_data.FEEDBACK if f.id == feedback_id), None)
-    if not item:
-        from fastapi import HTTPException
+    try:
+        feedback_id_int = int(feedback_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid feedback ID: {feedback_id}")
+
+    feedback_repo = FeedbackRepository(db)
+    feedback = await feedback_repo.get_by_id(feedback_id_int)
+
+    if not feedback:
         raise HTTPException(status_code=404, detail=f"Feedback {feedback_id} not found")
-    return item
+
+    return map_feedback_to_item(feedback)
 
 
 @router.get("/{feedback_id}/enrichment", response_model=EnrichmentMeta)
-async def get_enrichment(feedback_id: str):
+async def get_enrichment(feedback_id: str, db: AsyncSession = Depends(get_db)):
     """
     @endpoint GET /api/v1/feedback/:id/enrichment
     Returns AI enrichment metadata for a feedback item.
     """
+    try:
+        feedback_id_int = int(feedback_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid feedback ID: {feedback_id}")
+
     # Verify feedback exists
-    item = next((f for f in mock_data.FEEDBACK if f.id == feedback_id), None)
-    if not item:
-        from fastapi import HTTPException
+    feedback_repo = FeedbackRepository(db)
+    feedback = await feedback_repo.get_by_id(feedback_id_int)
+
+    if not feedback:
         raise HTTPException(status_code=404, detail=f"Feedback {feedback_id} not found")
 
-    # Mock enrichment metadata
+    # Mock enrichment metadata (Phase 2 will implement real enrichment)
     return EnrichmentMeta(
         model="claude-sonnet-4",
         model_version="20250514",
@@ -118,19 +186,29 @@ async def get_enrichment(feedback_id: str):
 
 
 @router.patch("/{feedback_id}/tags", response_model=FeedbackItem)
-async def update_tags(feedback_id: str, edits: FeedbackTagEdit):
+async def update_tags(feedback_id: str, edits: FeedbackTagEdit, db: AsyncSession = Depends(get_db)):
     """
     @endpoint PATCH /api/v1/feedback/:id/tags
     Updates enrichment tags (category, product_area, sentiment, urgency).
-    In production, this would update DB and trigger enrichment metadata update.
+    Phase 1: Returns updated item without persisting changes
+    Phase 2: Will update Classification table and trigger re-clustering
     """
-    # Find the item in mock data
-    item = next((f for f in mock_data.FEEDBACK if f.id == feedback_id), None)
-    if not item:
-        from fastapi import HTTPException
+    try:
+        feedback_id_int = int(feedback_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid feedback ID: {feedback_id}")
+
+    # Find the feedback item
+    feedback_repo = FeedbackRepository(db)
+    feedback = await feedback_repo.get_by_id(feedback_id_int)
+
+    if not feedback:
         raise HTTPException(status_code=404, detail=f"Feedback {feedback_id} not found")
 
-    # Apply edits (in mock mode, we create a copy with updates)
+    # Map to FeedbackItem
+    item = map_feedback_to_item(feedback)
+
+    # Apply edits (Phase 1: in-memory only)
     updated_data = item.model_dump()
     if edits.category is not None:
         updated_data["category"] = edits.category
@@ -143,8 +221,8 @@ async def update_tags(feedback_id: str, edits: FeedbackTagEdit):
 
     updated_item = FeedbackItem(**updated_data)
 
-    # In production, this would:
-    # 1. Update the database
+    # Phase 2 TODO:
+    # 1. Update Classification table with new tags
     # 2. Create EnrichmentMeta record with pm_corrected=True
     # 3. Trigger re-clustering if category/product_area changed
 

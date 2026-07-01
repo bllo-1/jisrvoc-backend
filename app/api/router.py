@@ -8,7 +8,7 @@ After running migrations, rename this file to router.py to activate Phase 3.
 from fastapi import APIRouter
 from .routes import (
     overview_phase3,  # Phase 3 - production-ready aggregations
-    feedback_phase3,  # Phase 3 - complex filtering with cursor pagination
+    feedback_new,  # Phase 1 - uses legacy feedback table (ACTIVE)
     themes_new,
     bets_new,
     customers_new,
@@ -24,12 +24,12 @@ from .routes import (
 
 api_router = APIRouter()
 
-# ==================== Phase 3 Routes (NEW) ====================
-# These routes use the new schema structure (feedback_item, raw_ticket)
-# and provide production-ready performance with complex filtering
+# ==================== Phase 1 Routes (ACTIVE) ====================
+# These routes use the Phase 1 schema (feedback, customers tables)
+# Phase 3 routes will be activated after migration
 
 api_router.include_router(overview_phase3.router, prefix="/overview", tags=["Overview"])
-api_router.include_router(feedback_phase3.router, prefix="/feedback", tags=["Feedback"])
+api_router.include_router(feedback_new.router, prefix="/feedback", tags=["Feedback"])
 
 # ==================== Existing Routes ====================
 api_router.include_router(themes_new.router, prefix="/themes", tags=["Themes"])
