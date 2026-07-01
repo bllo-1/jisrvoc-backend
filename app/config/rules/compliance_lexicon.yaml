@@ -1,0 +1,149 @@
+# Section 3 - Compliance Lexicon
+# Source: Jisr VOC Agent Context PDF Section 3
+#
+# Any feedback matching terms in this table must be classified as
+# Compliance/Legal - the highest Business Impact level.
+# Tier and frequency are irrelevant when a regulatory signal is present.
+# A match on any single term is sufficient.
+
+regulations:
+  - name: "PDPL"
+    country: "SA"
+    key_terms:
+      - "PDPL"
+      - "personal data protection"
+      - "Article 18"
+      - "retention"
+      - "soft delete"
+      - "data privacy"
+    confidence: "High"
+    note: "High confidence when 2+ terms match"
+
+  - name: "WPS / Wage Protection System"
+    country: "SA, UAE"
+    key_terms:
+      - "WPS"
+      - "wage protection"
+      - "Mudad WPS"
+      - "bank file"
+      - "SIF file"
+    confidence: "High"
+
+  - name: "GOSI"
+    country: "SA"
+    key_terms:
+      - "GOSI"
+      - "social insurance"
+      - "registered wage"
+      - "GOSI file"
+      - "GOSI contribution"
+    confidence: "High"
+
+  - name: "Mudad"
+    country: "SA"
+    key_terms:
+      - "Mudad"
+      - "Mudad WPS"
+      - "Mudad payroll"
+      - "Mudad submission"
+    confidence: "High"
+
+  - name: "Qiwa"
+    country: "SA"
+    key_terms:
+      - "Qiwa"
+      - "Qiwa contract"
+      - "Qiwa platform"
+      - "Qiwa integration"
+    confidence: "High"
+
+  - name: "Sehhaty"
+    country: "SA"
+    key_terms:
+      - "Sehhaty"
+      - "sick leave platform"
+      - "medical certificate"
+    confidence: "High"
+
+  - name: "Saudization / Nitaqat"
+    country: "SA"
+    key_terms:
+      - "Saudization"
+      - "Nitaqat"
+      - "Nitaqat band"
+      - "localization"
+      - "Nitaqat compliance"
+      - "green band"
+      - "red band"
+    confidence: "High"
+
+  - name: "ZATCA"
+    country: "SA"
+    key_terms:
+      - "ZATCA"
+      - "e-invoicing"
+      - "VAT"
+      - "tax invoice"
+      - "Zakat"
+    confidence: "High"
+
+  - name: "Iqama / National ID"
+    country: "SA"
+    key_terms:
+      - "Iqama"
+      - "national ID"
+      - "residence permit"
+      - "Iqama expiry"
+      - "ID expiry"
+    confidence: "High"
+
+  - name: "Muqeem"
+    country: "SA"
+    key_terms:
+      - "Muqeem"
+      - "immigration"
+      - "visa"
+      - "work permit"
+      - "Muqeem platform"
+    confidence: "High"
+
+  - name: "Kuwait Labor Law"
+    country: "KW"
+    key_terms:
+      - "Kuwait labor law"
+      - "MoSAL"
+      - "PAM"
+      - "Kuwait leave"
+      - "Kuwait compliance"
+    confidence: "High"
+
+  - name: "UAE Labor Law"
+    country: "AE"
+    key_terms:
+      - "MoHRE"
+      - "Wages Protection System UAE"
+      - "UAE labor"
+      - "UAE labor law"
+      - "UAE compliance"
+    confidence: "High"
+
+# Additional trigger phrases that indicate compliance/legal context
+# These are cross-regulation signals
+trigger_phrases:
+  - "mandatory"
+  - "required by law"
+  - "government deadline"
+  - "audit"
+  - "fine"
+  - "penalty"
+  - "non-compliance"
+  - "legal obligation"
+  - "regulatory requirement"
+  - "government submission"
+  - "active violation"
+  - "legal risk"
+  - "compliance breach"
+
+# Confidence levels:
+# - High: Single term match = compliance flag
+# - Medium: 2+ terms match for high confidence
