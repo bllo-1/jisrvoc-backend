@@ -1,0 +1,21 @@
+# Test fixture for compliance lexicon
+# Minimal compliance rules for testing
+
+regulations:
+  - name: "GOSI"
+    country: "SA"
+    key_terms:
+      - "GOSI"
+      - "social insurance"
+    confidence: "High"
+
+  - name: "WPS"
+    country: "SA"
+    key_terms:
+      - "WPS"
+      - "wage protection"
+    confidence: "High"
+
+trigger_phrases:
+  - "mandatory"
+  - "required by law"

@@ -2,9 +2,10 @@
 Feedback API endpoints - item listing, enrichment, tagging.
 Matches frontend contract from jisrvoc-frontend/src/lib/api/feedback.ts
 """
-from fastapi import APIRouter, Query, Depends, HTTPException
-from typing import Optional, List
+from fastapi import APIRouter, Query, Depends, HTTPException, Request
+from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 from ...schemas_new import (
     FeedbackItem,
     FeedbackPage,
@@ -21,9 +22,29 @@ from ...schemas_new import (
 from ... import mock_data
 from ...db.session import get_db
 from ...repositories.feedback import FeedbackRepository
+from ...repositories.theme import ThemeRepository
 from ...models.feedback import Feedback
+from ...core.config import settings
+from ...agents.orchestrator import AgentOrchestrator
 
 router = APIRouter()
+
+
+# Response models for agent enrichment endpoints
+class AgentEnrichmentResponse(BaseModel):
+    """Response from agent enrichment endpoint."""
+    success: bool
+    feedback_id: str
+    enrichment: Dict[str, Any]
+    agent_results: List[Dict[str, Any]]
+    execution_time_ms: float
+
+
+class RulesReloadResponse(BaseModel):
+    """Response from rules reload endpoint."""
+    success: bool
+    message: str
+    agent_status: Dict[str, Any]
 
 
 def map_feedback_to_item(feedback: Feedback) -> FeedbackItem:
@@ -248,3 +269,255 @@ async def get_siblings(raw_ticket_ref: str):
     siblings.sort(key=lambda f: f.id)
 
     return siblings
+
+
+# ============================================================================
+# AGENT-BASED ENRICHMENT ENDPOINTS (Phase 5)
+# ============================================================================
+
+@router.post("/enrich", response_model=AgentEnrichmentResponse)
+async def enrich_feedback(
+    feedback_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    @endpoint POST /api/v1/feedback/enrich
+    Enriches feedback using appropriate pipeline (agent-based or LLM-based).
+
+    This endpoint uses feature flags to route between:
+    - Agent pipeline (gradual rollout via AGENT_ROLLOUT_PERCENTAGE)
+    - Old LLM pipeline (fallback for remaining traffic)
+
+    The routing decision is consistent per feedback_id using hash-based bucketing.
+
+    Returns:
+        Enrichment result with metadata about which pipeline was used
+    """
+    from ...services.feature_flags import (
+        should_use_agents,
+        record_agent_execution,
+        record_old_pipeline_execution
+    )
+    from ...ai.llm_provider import create_llm_provider, LLMProvider
+    from ...services.classification_pipeline import ClassificationPipeline
+    import time
+
+    # Get correlation ID from request
+    correlation_id = getattr(request.state, "correlation_id", None)
+
+    try:
+        # Parse feedback ID
+        try:
+            feedback_id_int = int(feedback_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid feedback ID: {feedback_id}")
+
+        # Fetch feedback from database
+        feedback_repo = FeedbackRepository(db)
+        feedback = await feedback_repo.get_by_id(feedback_id_int)
+
+        if not feedback:
+            raise HTTPException(status_code=404, detail=f"Feedback {feedback_id} not found")
+
+        # Feature flag decision: agent vs old pipeline
+        use_agents = should_use_agents(feedback_id)
+
+        if use_agents:
+            # ============================================================
+            # AGENT PIPELINE (new)
+            # ============================================================
+            start_time = time.time()
+
+            try:
+                # Get orchestrator from app state
+                orchestrator = getattr(request.app.state, "orchestrator", None)
+                if not orchestrator:
+                    # Fallback: create orchestrator on-demand
+                    theme_repo = ThemeRepository(db)
+                    orchestrator = AgentOrchestrator(theme_repository=theme_repo)
+
+                # Run enrichment pipeline
+                success, enrichment, agent_results = await orchestrator.enrich_feedback(
+                    feedback_id=feedback_id,
+                    raw_text=feedback.content,
+                    language="EN",  # TODO: Detect language
+                    correlation_id=correlation_id,
+                )
+
+                execution_time_ms = (time.time() - start_time) * 1000
+
+                # Record metrics
+                record_agent_execution(
+                    success=success,
+                    execution_time_ms=execution_time_ms,
+                    error=None if success else "Agent pipeline returned success=False"
+                )
+
+                # Convert agent results to serializable format
+                agent_results_serialized = [
+                    {
+                        "agent_name": r.agent_name,
+                        "status": r.status.value,
+                        "tags_added": r.tags_added,
+                        "confidence_scores": r.confidence_scores,
+                        "metadata": r.metadata,
+                        "error_message": r.error_message,
+                        "execution_time_ms": r.execution_time_ms,
+                    }
+                    for r in agent_results
+                ]
+
+                # Add pipeline metadata
+                enrichment["pipeline_used"] = "agent"
+                enrichment["execution_time_ms"] = execution_time_ms
+
+                return AgentEnrichmentResponse(
+                    success=success,
+                    feedback_id=feedback_id,
+                    enrichment=enrichment,
+                    agent_results=agent_results_serialized,
+                    execution_time_ms=execution_time_ms,
+                )
+
+            except Exception as e:
+                execution_time_ms = (time.time() - start_time) * 1000
+                error_msg = str(e)
+
+                # Record error metrics
+                record_agent_execution(
+                    success=False,
+                    execution_time_ms=execution_time_ms,
+                    error=error_msg
+                )
+
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Agent enrichment failed: {error_msg}"
+                )
+
+        else:
+            # ============================================================
+            # OLD LLM PIPELINE (fallback)
+            # ============================================================
+            start_time = time.time()
+
+            try:
+                # Initialize old pipeline
+                provider_type = LLMProvider(settings.llm_provider)
+                llm_provider = create_llm_provider(provider_type)
+                old_pipeline = ClassificationPipeline(llm_provider)
+
+                # Run classification
+                classification = await old_pipeline.classify_feedback(
+                    title=feedback.title or "",
+                    content=feedback.content,
+                    source=feedback.source,
+                )
+
+                execution_time_ms = (time.time() - start_time) * 1000
+
+                # Record metrics
+                record_old_pipeline_execution(execution_time_ms)
+
+                # Convert to enrichment format (backward compatible)
+                enrichment = {
+                    "pipeline_used": "llm",
+                    "sentiment": classification.sentiment,
+                    "sentiment_score": classification.sentiment_score,
+                    "category": classification.category,
+                    "product_area": classification.product_area,
+                    "topics": classification.topics,
+                    "summary": classification.summary,
+                    "confidence": classification.category_confidence,
+                    "execution_time_ms": execution_time_ms,
+                }
+
+                # Mock agent results structure for consistency
+                agent_results = []
+
+                return AgentEnrichmentResponse(
+                    success=True,
+                    feedback_id=feedback_id,
+                    enrichment=enrichment,
+                    agent_results=agent_results,
+                    execution_time_ms=execution_time_ms,
+                )
+
+            except Exception as e:
+                execution_time_ms = (time.time() - start_time) * 1000
+                error_msg = str(e)
+
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"LLM enrichment failed: {error_msg}"
+                )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Enrichment failed: {str(e)}"
+        )
+
+
+@router.post("/enrich-with-agents", response_model=AgentEnrichmentResponse)
+async def enrich_with_agents(
+    feedback_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    @endpoint POST /api/v1/feedback/enrich-with-agents
+    DEPRECATED: Use POST /api/v1/feedback/enrich instead.
+
+    This endpoint is kept for backward compatibility but now delegates to
+    the feature-flag-aware /enrich endpoint.
+    """
+    return await enrich_feedback(feedback_id, request, db)
+
+
+@router.post("/admin/reload-rules", response_model=RulesReloadResponse)
+async def reload_rules(request: Request):
+    """
+    @endpoint POST /api/v1/feedback/admin/reload-rules
+    Hot-reloads all YAML rules without restarting the application.
+
+    Allows PMs to update disambiguation, compliance, and taxonomy rules
+    and test changes immediately without downtime.
+
+    Returns updated agent status including rule counts.
+    """
+    try:
+        # Get orchestrator from app state
+        orchestrator = getattr(request.app.state, "orchestrator", None)
+        if not orchestrator:
+            raise HTTPException(
+                status_code=503,
+                detail="Orchestrator not initialized. Check application startup."
+            )
+
+        # Reload rules
+        success = orchestrator.reload_rules()
+
+        if success:
+            agent_status = orchestrator.get_agent_status()
+            return RulesReloadResponse(
+                success=True,
+                message="Rules reloaded successfully",
+                agent_status=agent_status,
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to reload rules. Check logs for details."
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Rule reload failed: {str(e)}"
+        )

@@ -1,13 +1,15 @@
 """Analytics service for orchestrating complex queries and caching."""
 
 import logging
-from typing import Dict, List
-from datetime import datetime
+from typing import Dict, List, Any, Optional
+from datetime import datetime, timedelta
+from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.feedback_item import FeedbackItemRepository
 from app.repositories.theme import ThemeRepository
 from app.repositories.bet import BetRepository
+from app.models.feedback import Feedback
 from app.schemas_new import (
     OverviewMetrics,
     UrgencyDistribution
@@ -233,3 +235,313 @@ class AnalyticsService:
         Call this when done with the service to clean up resources.
         """
         await self.session.close()
+
+
+# ============================================================================
+# AGENT PIPELINE MONITORING (Phase 5)
+# ============================================================================
+
+async def get_agent_metrics(
+    db: AsyncSession,
+    hours_back: int = 24,
+) -> Dict[str, Any]:
+    """
+    Get agent pipeline execution metrics.
+
+    Calculates success rate, average latency, and error rate per agent
+    from recent enrichment operations.
+
+    Args:
+        db: Database session
+        hours_back: Number of hours to look back (default: 24)
+
+    Returns:
+        Dictionary with per-agent metrics:
+        {
+            "triage": {
+                "total_executions": 1234,
+                "success_count": 1200,
+                "error_count": 34,
+                "success_rate": 0.972,
+                "avg_execution_time_ms": 45.2,
+                "p95_execution_time_ms": 120.5,
+            },
+            "llm": {...},
+            ...
+        }
+
+    Note:
+        In Phase 5, agent execution logs are not persisted to database.
+        This function returns mock data. In Phase 6, add agent_execution_log table.
+    """
+    # TODO Phase 6: Query agent_execution_log table
+    # For now, return mock structure to demonstrate the interface
+
+    logger.info(
+        "Getting agent metrics",
+        extra={"hours_back": hours_back}
+    )
+
+    # Mock data structure (replace with real queries in Phase 6)
+    return {
+        "triage": {
+            "total_executions": 0,
+            "success_count": 0,
+            "error_count": 0,
+            "success_rate": 0.0,
+            "avg_execution_time_ms": 0.0,
+            "p95_execution_time_ms": 0.0,
+        },
+        "time_window": {
+            "hours_back": hours_back,
+            "start_time": (datetime.utcnow() - timedelta(hours=hours_back)).isoformat(),
+            "end_time": datetime.utcnow().isoformat(),
+        },
+        "note": "Agent execution logs not persisted yet. Add agent_execution_log table in Phase 6."
+    }
+
+
+async def get_classification_accuracy(
+    db: AsyncSession,
+    days_back: int = 7,
+) -> Dict[str, Any]:
+    """
+    Compare agent classifications vs PM corrections.
+
+    Calculates how often PMs correct agent-assigned product areas,
+    which indicates classification accuracy.
+
+    Args:
+        db: Database session
+        days_back: Number of days to analyze (default: 7)
+
+    Returns:
+        Dictionary with accuracy metrics:
+        {
+            "total_agent_classifications": 500,
+            "pm_corrections": 25,
+            "correction_rate": 0.05,  # 5% of classifications corrected
+            "accuracy_rate": 0.95,
+            "corrections_by_area": {
+                "Finance": 10,
+                "Payroll": 5,
+                ...
+            }
+        }
+
+    Note:
+        Requires enrichment_meta table with pm_corrected flag.
+        Currently returns mock data. Implement in Phase 6.
+    """
+    logger.info(
+        "Getting classification accuracy",
+        extra={"days_back": days_back}
+    )
+
+    # TODO Phase 6: Query enrichment_meta table for pm_corrected=true records
+    # SELECT
+    #   COUNT(*) as total,
+    #   SUM(CASE WHEN pm_corrected THEN 1 ELSE 0 END) as corrections
+    # FROM enrichment_meta
+    # WHERE created_at > NOW() - INTERVAL '7 days'
+
+    return {
+        "total_agent_classifications": 0,
+        "pm_corrections": 0,
+        "correction_rate": 0.0,
+        "accuracy_rate": 0.0,
+        "corrections_by_area": {},
+        "time_window": {
+            "days_back": days_back,
+            "start_date": (datetime.utcnow() - timedelta(days=days_back)).date().isoformat(),
+            "end_date": datetime.utcnow().date().isoformat(),
+        },
+        "note": "Enrichment metadata not persisted yet. Add enrichment_meta table in Phase 6."
+    }
+
+
+def get_rule_usage_stats() -> Dict[str, Any]:
+    """
+    Get statistics on which disambiguation/compliance rules fire most often.
+
+    Analyzes rule engine to show:
+    - Most frequently matched rules
+    - Rules that never match (candidates for removal)
+    - Average confidence scores per rule
+
+    Returns:
+        Dictionary with rule usage statistics:
+        {
+            "disambiguation_rules": [
+                {
+                    "rule_id": "leave_absence",
+                    "match_count": 1234,
+                    "avg_confidence": 0.95,
+                    "last_matched": "2026-07-01T10:30:00Z"
+                },
+                ...
+            ],
+            "compliance_rules": [
+                {
+                    "regulation": "GOSI",
+                    "match_count": 456,
+                    "tags_applied": 456
+                },
+                ...
+            ],
+            "unused_rules": ["old_rule_1", "deprecated_rule_2"]
+        }
+
+    Note:
+        Currently returns rule definitions from YAML.
+        In Phase 6, track actual match counts in database or Redis.
+    """
+    from .rule_engine import get_rule_engine
+
+    logger.info("Getting rule usage statistics")
+
+    rule_engine = get_rule_engine()
+
+    # Get loaded rule counts
+    disambiguation_rules = []
+    for rule in rule_engine.disambiguation_rules:
+        disambiguation_rules.append({
+            "term": rule.term,
+            "variants": len(rule.variants),
+            "match_count": 0,  # TODO: Track in Redis or DB
+            "note": "Match counts not tracked yet"
+        })
+
+    compliance_rules = []
+    for regulation in rule_engine.compliance_regulations:
+        compliance_rules.append({
+            "regulation": regulation.name_en,
+            "keywords_count": len(regulation.keywords_en) + len(regulation.keywords_ar),
+            "match_count": 0,  # TODO: Track in Redis or DB
+            "note": "Match counts not tracked yet"
+        })
+
+    scope_rules = []
+    for scope in rule_engine.l1_scopes:
+        scope_rules.append({
+            "scope": scope.scope,
+            "keywords_count": len(scope.keywords_en) + len(scope.keywords_ar),
+            "match_count": 0,  # TODO: Track in Redis or DB
+            "note": "Match counts not tracked yet"
+        })
+
+    return {
+        "loaded_at": rule_engine._last_load_time.isoformat() if rule_engine._last_load_time else None,
+        "disambiguation_rules": {
+            "total": len(disambiguation_rules),
+            "rules": disambiguation_rules[:10],  # Top 10
+        },
+        "compliance_rules": {
+            "total": len(compliance_rules),
+            "rules": compliance_rules,
+        },
+        "scope_rules": {
+            "total": len(scope_rules),
+            "rules": scope_rules[:10],  # Top 10
+        },
+        "note": "Rule match tracking not implemented yet. Add Redis counters in Phase 6."
+    }
+
+
+async def get_disagreement_rate(
+    db: AsyncSession,
+    limit: int = 100,
+) -> Dict[str, Any]:
+    """
+    Calculate disagreement rate between agent and old pipeline.
+
+    Useful for monitoring during gradual rollout. High disagreement rate
+    may indicate agent pipeline needs tuning.
+
+    Args:
+        db: Database session
+        limit: Number of recent items to compare
+
+    Returns:
+        Dictionary with disagreement analysis:
+        {
+            "total_compared": 100,
+            "agreements": 87,
+            "disagreements": 13,
+            "agreement_rate": 0.87,
+            "disagreement_patterns": {
+                "old_area → agent_area": count,
+                ...
+            }
+        }
+
+    Note:
+        Requires both pipelines to persist classifications.
+        Currently returns mock data. Implement in Phase 6.
+    """
+    logger.info(
+        "Getting pipeline disagreement rate",
+        extra={"limit": limit}
+    )
+
+    # TODO Phase 6: Query classification table for items with both agent and LLM results
+    # Compare product_area fields and aggregate disagreements
+
+    return {
+        "total_compared": 0,
+        "agreements": 0,
+        "disagreements": 0,
+        "agreement_rate": 0.0,
+        "disagreement_patterns": {},
+        "note": "Pipeline comparison not implemented yet. Use scripts/compare_pipelines.py for offline analysis."
+    }
+
+
+async def get_dashboard_summary(
+    db: AsyncSession
+) -> Dict[str, Any]:
+    """
+    Get high-level summary for monitoring dashboard.
+
+    Combines key metrics from all analytics functions into a single view.
+
+    Args:
+        db: Database session
+
+    Returns:
+        Dictionary with dashboard summary:
+        {
+            "feature_status": {...},
+            "rollout_metrics": {...},
+            "agent_health": {...},
+            "classification_accuracy": {...},
+            "rule_engine_status": {...}
+        }
+    """
+    from .feature_flags import get_feature_status
+
+    logger.info("Getting dashboard summary")
+
+    # Get feature flag status
+    feature_status = get_feature_status()
+
+    # Get agent metrics (24h)
+    agent_metrics = await get_agent_metrics(db, hours_back=24)
+
+    # Get classification accuracy (7 days)
+    accuracy = await get_classification_accuracy(db, days_back=7)
+
+    # Get rule usage stats
+    rule_stats = get_rule_usage_stats()
+
+    # Get disagreement rate
+    disagreement = await get_disagreement_rate(db, limit=100)
+
+    return {
+        "timestamp": datetime.utcnow().isoformat(),
+        "feature_status": feature_status,
+        "agent_metrics_24h": agent_metrics,
+        "classification_accuracy_7d": accuracy,
+        "rule_engine": rule_stats,
+        "pipeline_comparison": disagreement,
+    }

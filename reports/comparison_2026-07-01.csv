@@ -1,0 +1,51 @@
+feedback_id,raw_text_preview,old_product_area,old_confidence,old_time_ms,agent_product_area,agent_confidence,agent_time_ms,normalized_old_area,areas_match,agent_action,agent_compliance,agent_compliance_tags,agent_matched_theme,agent_reasoning
+3,It would be great if you could add dark mode to the application. My eyes hurt when using it at night.,ui,0.950,2229.0,Employee Experience,0.200,67.4,Platform & Issues,NO,CREATE,NO,,,"📦 Product Area: Employee Experience (20% confidence)
+   Reason: Matched 1 keywords for Employee Experience
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"
+2,The app crashes when I click the submit button. This happens every time I try to save my work.,,0.950,1950.6,Employee Experience,0.200,63.3,,NO,CREATE,NO,,,"📦 Product Area: Employee Experience (20% confidence)
+   Reason: Matched 1 keywords for Employee Experience
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"
+1,"I love this product, it works perfectly\! The user interface is intuitive and the performance is excellent.",ui,0.950,1811.1,PMS,0.200,2.4,Platform & Issues,NO,CREATE,NO,,,"📦 Product Area: PMS (20% confidence)
+   Reason: Matched 1 keywords for PMS
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"
+68,(No content provided),,0.800,2022.1,Other / Unclassified,0.100,11.5,,NO,CREATE,NO,,,"📦 Product Area: Other / Unclassified (10% confidence)
+   Reason: No scope keywords matched
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"
+61,(No content provided),,0.800,1509.4,Other / Unclassified,0.100,2.5,,NO,CREATE,NO,,,"📦 Product Area: Other / Unclassified (10% confidence)
+   Reason: No scope keywords matched
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"
+52,(No content provided),,0.900,3141.4,Other / Unclassified,0.100,4.3,,NO,CREATE,NO,,,"📦 Product Area: Other / Unclassified (10% confidence)
+   Reason: No scope keywords matched
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"
+51,(No content provided),,1.000,2304.5,Other / Unclassified,0.100,1.6,,NO,CREATE,NO,,,"📦 Product Area: Other / Unclassified (10% confidence)
+   Reason: No scope keywords matched
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"
+60,(No content provided),,0.700,2024.9,Other / Unclassified,0.100,6.6,,NO,CREATE,NO,,,"📦 Product Area: Other / Unclassified (10% confidence)
+   Reason: No scope keywords matched
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"
+67,(No content provided),,0.800,1620.5,Other / Unclassified,0.100,3.1,,NO,CREATE,NO,,,"📦 Product Area: Other / Unclassified (10% confidence)
+   Reason: No scope keywords matched
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"
+63,(No content provided),,0.700,1696.4,Other / Unclassified,0.100,8.7,,NO,CREATE,NO,,,"📦 Product Area: Other / Unclassified (10% confidence)
+   Reason: No scope keywords matched
+   No active themes to match against
+✅ Decision: CREATE
+   No suitable theme found"

@@ -1,0 +1,21 @@
+# Test fixture for disambiguation rules
+# Minimal rule set for testing
+
+rules:
+  - term: "Settlement"
+    description: "Test settlement disambiguation"
+    variants:
+      - name: "Final Settlement (EOS)"
+        scope: "Payroll"
+        confidence: 1.0
+        context_patterns:
+          - "final settlement"
+          - "end of service"
+
+      - name: "Vacation Settlement"
+        scope: "Payroll"
+        cross_tag: "Attendance & Leaves"
+        confidence: 1.0
+        context_patterns:
+          - "vacation settlement"
+          - "leave.*settlement"
