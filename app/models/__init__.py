@@ -16,6 +16,7 @@ from .clustering import ClusteringRun, ThemeMembership
 from .feedback import Feedback
 from .classification import Classification
 from .company import Company
+from .customer import LegacyCustomer
 
 __all__ = [
     # Phase 3 models
@@ -46,4 +47,5 @@ __all__ = [
     "Feedback",
     "Classification",
     "Company",
+    "LegacyCustomer",
 ]
