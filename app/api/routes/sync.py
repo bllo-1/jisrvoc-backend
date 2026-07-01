@@ -50,7 +50,7 @@ async def sync_hubspot_tickets(
     """
     try:
         # Initialize HubSpot connector
-        connector = HubSpotConnector(api_key=settings.hubspot_api_key)
+        connector = HubSpotConnector(session=db)
 
         # Initialize sync service
         sync_service = FeedbackSyncService(session=db, connector=connector)
