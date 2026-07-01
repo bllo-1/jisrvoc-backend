@@ -225,10 +225,9 @@ async def readyz(request: Request):
             rule_engine = get_rule_engine()
             health["rule_engine"] = {
                 "status": "ok",
-                "disambiguation_rules": len(rule_engine.disambiguation_rules),
-                "compliance_regulations": len(rule_engine.compliance_regulations),
-                "l1_scopes": len(rule_engine.l1_scopes),
-                "last_loaded": rule_engine._last_load_time.isoformat() if rule_engine._last_load_time else None,
+                "disambiguation_rules": len(rule_engine.disambiguation_rules.get("rules", [])),
+                "compliance_regulations": len(rule_engine.compliance_lexicon.get("regulations", [])),
+                "l1_scopes": len(rule_engine.taxonomy.get("scopes", [])),
             }
         except Exception as e:
             health["rule_engine"] = {"error": str(e)}
