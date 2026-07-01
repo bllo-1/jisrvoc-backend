@@ -1,0 +1,26 @@
+# Triage Agent Configuration
+# Controls behavior of the main feedback triage agent
+
+# Theme matching configuration
+theme_match_threshold: 0.70  # Minimum Jaccard similarity to LINK (70%)
+min_confidence: 0.60          # Minimum confidence for product area classification
+
+# Feature flags (for future phases)
+use_llm_for_theme_creation: false      # Phase 6: Use LLM to generate theme names
+use_embeddings_for_matching: false     # Phase 6: Use vector similarity instead of Jaccard
+
+# Keyword extraction settings
+min_keyword_length: 3                  # Minimum characters for a keyword
+max_keywords_per_feedback: 50          # Cap keywords to prevent noise
+
+# Confidence thresholds
+high_confidence_threshold: 0.80        # >= 80% = high confidence
+medium_confidence_threshold: 0.60      # >= 60% = medium confidence
+# < 60% = low confidence
+
+# Compliance handling
+compliance_overrides_confidence: true  # Compliance items always get high priority
+
+# Logging
+log_reasoning: true                    # Include full reasoning in logs
+log_keyword_extraction: false          # Debug keyword extraction (verbose)

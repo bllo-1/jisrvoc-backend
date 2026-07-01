@@ -1,0 +1,362 @@
+# Section 2 - Disambiguation Rules
+# Source: Jisr VOC Agent Context PDF Section 2
+#
+# These rules disambiguate confusable terms based on surrounding context.
+# Always look at the noun before the ambiguous term, the user role mentioned,
+# and the workflow described.
+
+rules:
+  - term: "Settlement"
+    description: "Three distinct features routing to different squads"
+    variants:
+      - name: "Final Settlement (EOS)"
+        scope: "Payroll"
+        confidence: 1.0
+        context_patterns:
+          - "final settlement"
+          - "end of service"
+          - "eos"
+          - "offboarding.*settlement"
+          - "leaving.*settlement"
+          - "termination.*settlement"
+
+      - name: "Vacation Settlement"
+        scope: "Payroll"
+        cross_tag: "Attendance & Leaves"
+        confidence: 1.0
+        context_patterns:
+          - "vacation settlement"
+          - "leave.*settlement"
+          - "leave balance.*payout"
+          - "unused leave"
+
+      - name: "Expense Settlement"
+        scope: "Finance"
+        confidence: 1.0
+        context_patterns:
+          - "expense settlement"
+          - "reimbursement"
+          - "receipt"
+          - "expense.*claim"
+
+  - term: "Approval"
+    description: "Cross-cutting framework that touches every module"
+    default_cross_tag: "Org Management"
+    variants:
+      - name: "Leave Approval"
+        scope: "Attendance & Leaves"
+        cross_tag: "Org Management"
+        confidence: 1.0
+        context_patterns:
+          - "leave approval"
+          - "approve.*leave"
+          - "vacation approval"
+          - "leave.*request"
+
+      - name: "Payroll Approval"
+        scope: "Payroll"
+        cross_tag: "Org Management"
+        confidence: 1.0
+        context_patterns:
+          - "payroll approval"
+          - "approve.*payroll"
+          - "salary approval"
+
+      - name: "Expense Approval"
+        scope: "Finance"
+        cross_tag: "Org Management"
+        confidence: 1.0
+        context_patterns:
+          - "expense approval"
+          - "approve.*expense"
+          - "reimbursement approval"
+
+      - name: "Letter Approval"
+        scope: "Employee Lifecycle"
+        cross_tag: "Org Management"
+        confidence: 1.0
+        context_patterns:
+          - "letter approval"
+          - "approve.*letter"
+          - "hr letter"
+          - "certificate approval"
+
+      - name: "Custom Approval"
+        scope: "Org Management"
+        confidence: 1.0
+        context_patterns:
+          - "custom approval"
+          - "approval workflow"
+          - "approval cycle"
+          - "approval policy"
+
+  - term: "Integration"
+    description: "Both customer-facing and government integrations under Business Systems"
+    variants:
+      - name: "Government Integration"
+        scope: "Integrations"
+        confidence: 1.0
+        context_patterns:
+          - "mudad"
+          - "qiwa"
+          - "gosi file"
+          - "sehhaty"
+          - "government"
+          - "\\bsa\\b.*integration"  # SA + integration signal
+
+      - name: "Accounting Integration"
+        scope: "Integrations"
+        confidence: 1.0
+        context_patterns:
+          - "zoho"
+          - "ms dynamics"
+          - "netsuite"
+          - "\\bapi\\b"
+          - "accounting.*integration"
+          - "erp"
+
+  - term: "Mobile"
+    description: "Customer feedback routes to EEN Jira; platform foundation work to JP"
+    variants:
+      - name: "Mobile App - Employee"
+        scope: "Employee Experience"
+        confidence: 1.0
+        context_patterns:
+          - "clock.in"
+          - "clock.out"
+          - "mobile.*leave"
+          - "self.service"
+          - "announcement"
+          - "notification"
+          - "employee.*app"
+          - "mobile.*app"
+
+      - name: "Mobile App - Manager"
+        scope: "Employee Experience"
+        confidence: 1.0
+        context_patterns:
+          - "manager.*mobile"
+          - "approval.*mobile"
+          - "team view"
+          - "manager.*app"
+
+  - term: "Reports"
+    description: "Cross-cutting - most modules have their own report sub-feature"
+    variants:
+      - name: "Standard Reports"
+        scope: "People Analytics"
+        confidence: 1.0
+        context_patterns:
+          - "pivot.*report"
+          - "dashboard"
+          - "data export"
+          - "analytics"
+          - "kpi"
+
+      - name: "WPS Report"
+        scope: "Payroll"
+        cross_tag: "People Analytics"
+        confidence: 1.0
+        context_patterns:
+          - "wps report"
+          - "wage protection.*report"
+
+      - name: "GOSI Report"
+        scope: "Payroll"
+        cross_tag: "People Analytics"
+        confidence: 1.0
+        context_patterns:
+          - "gosi report"
+          - "social insurance.*report"
+
+      - name: "Attendance Report"
+        scope: "Attendance & Leaves"
+        cross_tag: "People Analytics"
+        confidence: 1.0
+        context_patterns:
+          - "attendance report"
+          - "timesheet"
+          - "clock.*report"
+
+  - term: "GOSI"
+    description: "Different sub-features - same squad, different PM focus"
+    auto_tag: "Compliance"
+    variants:
+      - name: "GOSI File"
+        scope: "Integrations"
+        confidence: 1.0
+        context_patterns:
+          - "gosi file"
+          - "file generation"
+          - "file.*format"
+          - "submission"
+          - "upload.*gosi"
+
+      - name: "GOSI Rules"
+        scope: "Payroll"
+        confidence: 1.0
+        context_patterns:
+          - "gosi.*calculation"
+          - "contribution.*rate"
+          - "gosi.*rule"
+          - "eligibility"
+          - "registered wage"
+
+  - term: "WPS"
+    description: "Multi-label by design - all are compliance items"
+    auto_tag: "Compliance"
+    variants:
+      - name: "WPS Bank File"
+        scope: "Payroll"
+        confidence: 1.0
+        context_patterns:
+          - "bank file"
+          - "bank.*submission"
+          - "wps.*file"
+          - "sif file"
+
+      - name: "WPS Rules"
+        scope: "Payroll"
+        confidence: 1.0
+        context_patterns:
+          - "wps.*calculation"
+          - "salary posting"
+          - "wage.*rule"
+
+      - name: "WPS Activation"
+        scope: "Payroll"
+        confidence: 1.0
+        context_patterns:
+          - "wps.*setup"
+          - "first.time.*wps"
+          - "wps.*activation"
+          - "enable.*wps"
+
+  - term: "Cost Center"
+    description: "Routes to different squads"
+    variants:
+      - name: "Cost Centers - Setup"
+        scope: "Finance"
+        confidence: 1.0
+        context_patterns:
+          - "cost center.*hierarchy"
+          - "cost center.*structure"
+          - "cost center.*config"
+          - "create.*cost center"
+
+      - name: "Cost Centers - Employee Profile"
+        scope: "Employee Lifecycle"
+        confidence: 1.0
+        context_patterns:
+          - "employee.*cost center"
+          - "assign.*cost center"
+          - "profile.*cost center"
+
+      - name: "Cost Centers - Accounting"
+        scope: "Finance"
+        confidence: 1.0
+        context_patterns:
+          - "accounting.*cost center"
+          - "posting.*cost center"
+          - "zoho.*cost center"
+          - "netsuite.*cost center"
+
+  - term: "Custom"
+    description: "Three distinct labels routing to different areas"
+    variants:
+      - name: "Custom Fields"
+        scope: "Org Management"
+        confidence: 1.0
+        context_patterns:
+          - "custom field"
+          - "data type"
+          - "field.*config"
+          - "add.*field"
+
+      - name: "Custom Request"
+        scope: "Employee Experience"
+        cross_tag: "Org Management"
+        confidence: 1.0
+        context_patterns:
+          - "custom request"
+          - "self.service.*form"
+          - "request.*type"
+
+      - name: "Custom Task"
+        scope: "Org Management"
+        confidence: 1.0
+        context_patterns:
+          - "custom task"
+          - "workflow.*assignment"
+          - "task.*assignment"
+
+  - term: "Onboarding"
+    description: "Routes to completely different tribes"
+    variants:
+      - name: "Employee Onboarding"
+        scope: "Employee Lifecycle"
+        confidence: 1.0
+        context_patterns:
+          - "employee.*onboarding"
+          - "new hire"
+          - "joiner"
+          - "hiring"
+          - "add.*employee"
+
+      - name: "Customer Onboarding"
+        scope: null  # Not a VOC scope
+        confidence: 1.0
+        context_patterns:
+          - "customer.*onboarding"
+          - "company.*setup"
+          - "jisr.*activation"
+          - "implementation"
+
+  - term: "Attendance"
+    description: "Four KB sub-areas - be specific"
+    variants:
+      - name: "Attendance Config/Policy"
+        scope: "Attendance & Leaves"
+        confidence: 1.0
+        context_patterns:
+          - "attendance.*policy"
+          - "attendance.*rule"
+          - "lateness.*rule"
+          - "overtime.*policy"
+
+      - name: "Attendance Punches/Logs"
+        scope: "Attendance & Leaves"
+        confidence: 1.0
+        context_patterns:
+          - "clock.*in"
+          - "clock.*out"
+          - "punch"
+          - "timesheet"
+          - "attendance.*log"
+
+      - name: "Attendance Reports"
+        scope: "Attendance & Leaves"
+        cross_tag: "People Analytics"
+        confidence: 1.0
+        context_patterns:
+          - "attendance.*report"
+          - "attendance.*dashboard"
+          - "attendance.*export"
+
+      - name: "Scheduling/Shifts"
+        scope: "Attendance & Leaves"
+        confidence: 1.0
+        context_patterns:
+          - "schedule"
+          - "shift"
+          - "roster"
+          - "rotation"
+
+# Invalid legacy scope names - never use these
+invalid_scope_names:
+  - "People Management"
+  - "People Mgmt"
+  - "Requests"
+  - "Settings"
+  - "Performance"  # Use "PMS" instead
+  - "Attendance"   # Must be "Attendance & Leaves"

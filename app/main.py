@@ -8,6 +8,10 @@ import time
 from .core.config import settings
 from .api.router import api_router
 from .api.routes import webhooks_new
+from .agents.orchestrator import AgentOrchestrator
+from .services.rule_engine import get_rule_engine
+from .db.session import get_db
+from .repositories.theme import ThemeRepository
 
 # Configure structured logging
 logging.basicConfig(
@@ -83,6 +87,59 @@ async def log_requests(request: Request, call_next):
     return response
 
 
+# Startup event: Initialize Agent Orchestrator
+@app.on_event("startup")
+async def startup_event():
+    """Initialize application dependencies at startup."""
+    logger.info("Application startup: Initializing dependencies")
+
+    # Initialize agent orchestrator if feature is enabled
+    if settings.agent_enrichment_enabled:
+        try:
+            # Get rule engine singleton
+            rule_engine = get_rule_engine()
+
+            # Get database session for theme repository
+            # We need to create a single session for the orchestrator's theme repository
+            async for db in get_db():
+                theme_repository = ThemeRepository(db)
+
+                # Initialize orchestrator
+                orchestrator = AgentOrchestrator(
+                    rule_engine=rule_engine,
+                    theme_repository=theme_repository,
+                )
+
+                # Store in app state for dependency injection
+                app.state.orchestrator = orchestrator
+
+                logger.info(
+                    "Agent orchestrator initialized successfully",
+                    extra={
+                        "agent_count": len(orchestrator.agents),
+                        "agents": list(orchestrator.agents.keys()),
+                        "feature_enabled": settings.agent_enrichment_enabled,
+                        "rollout_percentage": settings.agent_rollout_percentage,
+                    }
+                )
+                break
+        except Exception as e:
+            logger.error(
+                "Failed to initialize agent orchestrator",
+                extra={"error": str(e)},
+                exc_info=True
+            )
+            # Don't crash the application, just disable agent enrichment
+            app.state.orchestrator = None
+            logger.warning("Agent enrichment will be unavailable")
+    else:
+        app.state.orchestrator = None
+        logger.info(
+            "Agent enrichment is disabled",
+            extra={"agent_enrichment_enabled": settings.agent_enrichment_enabled}
+        )
+
+
 # Include API router (authenticated endpoints)
 app.include_router(api_router, prefix="/api/v1")
 
@@ -98,8 +155,11 @@ async def healthz():
 
 
 @app.get("/api/v1/readyz", tags=["Ops"])
-async def readyz():
+async def readyz(request: Request):
     """Readiness check - verifies app dependencies are healthy."""
+    from .services.feature_flags import get_feature_status
+    from .services.rule_engine import get_rule_engine
+
     health = {
         "status": "ready",
         "environment": settings.app_env,
@@ -128,5 +188,50 @@ async def readyz():
     except Exception as e:
         health["checks"]["redis"] = f"error: {str(e)}"
         health["status"] = "degraded"
+
+    # Check agent orchestrator status
+    if settings.agent_enrichment_enabled:
+        orchestrator = getattr(request.app.state, "orchestrator", None)
+        if orchestrator:
+            try:
+                agent_status = orchestrator.get_agent_status()
+                health["checks"]["agent_orchestrator"] = {
+                    "status": "ok",
+                    "agent_count": agent_status["agent_count"],
+                    "agents": agent_status["agents"],
+                }
+            except Exception as e:
+                health["checks"]["agent_orchestrator"] = f"error: {str(e)}"
+                health["status"] = "degraded"
+        else:
+            health["checks"]["agent_orchestrator"] = "not_initialized"
+            health["status"] = "degraded"
+
+    # Add agent pipeline status and metrics
+    try:
+        feature_status = get_feature_status()
+        health["agent_pipeline"] = {
+            "enabled": feature_status["enabled"],
+            "rollout_percentage": feature_status["rollout_percentage"],
+            "metrics": feature_status["metrics"],
+        }
+    except Exception as e:
+        logger.error(f"Failed to get agent pipeline status: {e}")
+        health["agent_pipeline"] = {"error": str(e)}
+
+    # Add rule engine status
+    if settings.agent_enrichment_enabled:
+        try:
+            rule_engine = get_rule_engine()
+            health["rule_engine"] = {
+                "status": "ok",
+                "disambiguation_rules": len(rule_engine.disambiguation_rules),
+                "compliance_regulations": len(rule_engine.compliance_regulations),
+                "l1_scopes": len(rule_engine.l1_scopes),
+                "last_loaded": rule_engine._last_load_time.isoformat() if rule_engine._last_load_time else None,
+            }
+        except Exception as e:
+            health["rule_engine"] = {"error": str(e)}
+            health["status"] = "degraded"
 
     return health

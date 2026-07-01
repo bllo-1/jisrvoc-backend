@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     embedding_dim: int = 1536  # OpenAI text-embedding-3-small
 
+    # Agent-based enrichment (Phase 5)
+    agent_enrichment_enabled: bool = False  # Enable agent-based classification
+    agent_rollout_percentage: int = 0  # 0-100: Percentage of feedback to enrich with agents
+
     # Vertex AI (Phase 4)
     gcp_project_id: str = ""
     gcp_region: str = "me-central1"  # Dammam, Saudi Arabia
