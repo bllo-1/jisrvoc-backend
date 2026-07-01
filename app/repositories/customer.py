@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.customer import Customer
+from app.models.customer_new import Customer
 from app.repositories.base import BaseRepository
 
 

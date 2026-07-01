@@ -8,9 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.feedback_item import FeedbackItemRepository
 from app.repositories.theme import ThemeRepository
 from app.repositories.bet import BetRepository
-from app.schemas import (
+from app.schemas_new import (
     OverviewMetrics,
-    UrgencyDistribution,
+    UrgencyDistribution
+)
+from app.schemas import (
     TrendPoint,
     CountBucket,
     ThemeSummary
@@ -83,11 +85,45 @@ class AnalyticsService:
                 logger.error(f"Failed to get urgency distribution: {e}")
                 urgency_distribution = UrgencyDistribution(low=0, medium=0, high=0)
 
+            # Chart data (fail gracefully with empty lists)
+            try:
+                volume_trend = await self.get_volume_trend(12)
+                weekly_volume = [
+                    {"week": point.week_start.isoformat(), "count": point.count}
+                    for point in volume_trend
+                ]
+            except Exception as e:
+                logger.error(f"Failed to get volume trend: {e}")
+                weekly_volume = []
+
+            try:
+                source_dist = await self.get_by_source_distribution()
+                source_breakdown = [
+                    {"source": bucket.key, "count": bucket.count}
+                    for bucket in source_dist
+                ]
+            except Exception as e:
+                logger.error(f"Failed to get source breakdown: {e}")
+                source_breakdown = []
+
+            try:
+                area_dist = await self.get_by_area_distribution()
+                product_area_breakdown = [
+                    {"area": bucket.key, "count": bucket.count}
+                    for bucket in area_dist
+                ]
+            except Exception as e:
+                logger.error(f"Failed to get product area breakdown: {e}")
+                product_area_breakdown = []
+
             return OverviewMetrics(
-                total_items=total_items,
+                total_feedback=total_items,
                 active_themes=active_themes,
                 high_urgency_open=high_urgency_open,
                 bets_in_flight=bets_in_flight,
+                weekly_volume=weekly_volume,
+                source_breakdown=source_breakdown,
+                product_area_breakdown=product_area_breakdown,
                 urgency_distribution=urgency_distribution
             )
 

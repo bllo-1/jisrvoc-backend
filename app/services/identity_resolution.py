@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.customer import CustomerRepository
 from app.repositories.feedback import FeedbackRepository
 from app.models.feedback import Feedback
-from app.models.customer import Customer
+from app.models.customer_new import Customer
 
 
 logger = logging.getLogger(__name__)

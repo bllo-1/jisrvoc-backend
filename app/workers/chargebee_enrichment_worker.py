@@ -71,7 +71,7 @@ def enrich_feedback_item(self, feedback_id: str) -> dict:
                 }
 
             # Get customer email from customer record
-            from app.models.customer import Customer
+            from app.models.customer_new import Customer
             customer_result = db.execute(
                 select(Customer).where(Customer.id == feedback.customer_id)
             )

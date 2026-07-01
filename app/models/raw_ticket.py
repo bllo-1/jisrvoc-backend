@@ -11,7 +11,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.feedback_item import FeedbackItem
-    from app.models.customer import Customer
+    from app.models.customer_new import Customer
 
 
 class SourceType(str, enum.Enum):

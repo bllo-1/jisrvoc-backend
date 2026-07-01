@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.services.analytics import AnalyticsService
-from app.schemas import OverviewMetrics, TrendPoint, CountBucket, ThemeSummary
+from app.schemas_new import OverviewMetrics
+from app.schemas import TrendPoint, CountBucket, ThemeSummary
 
 router = APIRouter()
 

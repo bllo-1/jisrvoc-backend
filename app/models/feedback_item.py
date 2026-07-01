@@ -12,7 +12,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.raw_ticket import RawTicket
-    from app.models.customer import Customer
+    from app.models.customer_new import Customer
     from app.models.enrichment import Enrichment
     from app.models.embedding import Embedding
     from app.models.vote import Vote
